@@ -1,0 +1,595 @@
+# everysize checkout: deutsche Texte (msgid = Original).
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
+
+#.
+msgid "Die Erstattung läuft über everysize (PayPal) — Gutschriften in JTL-Wawi bewegen kein Geld. Der Restbetrag ist vorbelegt. Ein Storno vor dem Versand ohne bisherige Erstattung wird automatisch voll erstattet (Einstellung „Automatische Erstattung“)."
+msgstr "Die Erstattung läuft über everysize (PayPal) — Gutschriften in JTL-Wawi bewegen kein Geld. Der Restbetrag ist vorbelegt. Ein Storno vor dem Versand ohne bisherige Erstattung wird automatisch voll erstattet (Einstellung „Automatische Erstattung“)."
+
+#.
+msgid "Die Retoure ist für alle Positionen bereits gemeldet."
+msgstr "Die Retoure ist für alle Positionen bereits gemeldet."
+
+#.
+msgid "Korrektur, falls nötig: Sendungsnummer oder Retoure von Hand melden"
+msgstr "Korrektur, falls nötig: Sendungsnummer oder Retoure von Hand melden"
+
+#.
+msgid "Nur die Erstattung lösen Sie hier aus — Gutschriften in der Wawi bewegen kein Geld."
+msgstr "Nur die Erstattung lösen Sie hier aus — Gutschriften in der Wawi bewegen kein Geld."
+
+#.
+msgid "Nur wenn die Wawi keine oder eine falsche Sendungsnummer liefert. Eine hier gespeicherte Nummer hat Vorrang vor der aus dem Wawi-Lieferschein und gilt als Versand."
+msgstr "Nur wenn die Wawi keine oder eine falsche Sendungsnummer liefert. Eine hier gespeicherte Nummer hat Vorrang vor der aus dem Wawi-Lieferschein und gilt als Versand."
+
+#.
+msgid "Nur wenn eine Rücksendung in der Wawi nicht als Storno gebucht wird — ein Storno nach dem Versand meldet das Plugin selbst als Retoure."
+msgstr "Nur wenn eine Rücksendung in der Wawi nicht als Storno gebucht wird — ein Storno nach dem Versand meldet das Plugin selbst als Retoure."
+
+#.
+msgid "Retoure von Hand"
+msgstr "Retoure von Hand"
+
+#.
+msgid "Sendungsnummer von Hand"
+msgstr "Sendungsnummer von Hand"
+
+#.
+msgid "Sobald die Wawi mit dem Shop abgeglichen hat, meldet das Plugin es automatisch an everysize (alle 5 Minuten): Versand mit Sendungsnummer, Storno vor dem Versand als Händler-Storno, Storno nach dem Versand als Retoure."
+msgstr "Sobald die Wawi mit dem Shop abgeglichen hat, meldet das Plugin es automatisch an everysize (alle 5 Minuten): Versand mit Sendungsnummer, Storno vor dem Versand als Händler-Storno, Storno nach dem Versand als Retoure."
+
+#.
+msgid "Versand, Sendungsnummer und Storno buchen Sie wie gewohnt in der JTL-Wawi."
+msgstr "Versand, Sendungsnummer und Storno buchen Sie wie gewohnt in der JTL-Wawi."
+
+#.
+msgid "voller Betrag"
+msgstr "voller Betrag"
+
+#.
+msgid "— erste aktive Versandart des Shops —"
+msgstr "— erste aktive Versandart des Shops —"
+
+#.
+msgid "(noch nicht gesetzt)"
+msgstr "(noch nicht gesetzt)"
+
+#.
+msgid "(unverändert — gespeichert)"
+msgstr "(unverändert — gespeichert)"
+
+#.
+msgid "Abgleich"
+msgstr "Abgleich"
+
+#.
+msgid "Abgleich abgeschlossen, nichts zu tun."
+msgstr "Abgleich abgeschlossen, nichts zu tun."
+
+#.
+msgid "Abgleich aktiv (Import und Rückmeldungen über Cron und CLI)"
+msgstr "Abgleich aktiv (Import und Rückmeldungen über Cron und CLI)"
+
+#.
+msgid "Abgleich jetzt ausführen?"
+msgstr "Abgleich jetzt ausführen?"
+
+#.
+msgid "alle"
+msgstr "alle"
+
+#.
+msgid "Alle"
+msgstr "Alle"
+
+#.
+msgid "API-Umgebung"
+msgstr "API-Umgebung"
+
+#.
+msgid "Artikel/Sendungsnummer/Erstattung"
+msgstr "Artikel/Sendungsnummer/Erstattung"
+
+#.
+msgid "automatisch"
+msgstr "automatisch"
+
+#.
+msgid "Automatische Erstattung"
+msgstr "Automatische Erstattung"
+
+#.
+msgid "Bei Storno vor Versand automatisch voll erstatten (Empfehlung)"
+msgstr "Bei Storno vor Versand automatisch voll erstatten (Empfehlung)"
+
+#.
+msgid "bekannt"
+msgstr "bekannt"
+
+#.
+msgid "Bestellbestätigung des Shops nach dem Import senden (Default: nein — der Kunde hat seine Bestätigung von everysize)"
+msgstr "Bestellbestätigung des Shops nach dem Import senden (Default: nein — der Kunde hat seine Bestätigung von everysize)"
+
+#.
+msgid "Bestellnummer"
+msgstr "Bestellnummer"
+
+#.
+msgid "Bestellnummer gemeldet"
+msgstr "Bestellnummer gemeldet"
+
+#.
+msgid "Bestellung nicht gefunden oder nicht mit everysize verknüpft."
+msgstr "Bestellung nicht gefunden oder nicht mit everysize verknüpft."
+
+#.
+msgid "Betrag"
+msgstr "Betrag"
+
+#.
+msgid "Bezahlt"
+msgstr "Bezahlt"
+
+#.
+msgid "Bitte zuerst Client-ID und Client-Secret eintragen."
+msgstr "Bitte zuerst Client-ID und Client-Secret eintragen."
+
+#.
+msgid "Carrier für Versandmeldung"
+msgstr "Carrier für Versandmeldung"
+
+#.
+msgid "Carrier ohne Sendungsnummer wird trotzdem gemeldet; die everysize-API nimmt den Code nur zusammen mit einem Carrier an."
+msgstr "Carrier ohne Sendungsnummer wird trotzdem gemeldet; die everysize-API nimmt den Code nur zusammen mit einem Carrier an."
+
+#.
+msgid "Carrier-Zuordnung (JSON)"
+msgstr "Carrier-Zuordnung (JSON)"
+
+#.
+msgid "Carrier-Zuordnung ist kein gültiges JSON — der bisherige Wert bleibt gespeichert."
+msgstr "Carrier-Zuordnung ist kein gültiges JSON — der bisherige Wert bleibt gespeichert."
+
+#.
+msgid "Bestellungen"
+msgstr "Bestellungen"
+
+#.
+msgid "Einstellungen"
+msgstr "Einstellungen"
+
+#.
+msgid "Protokoll"
+msgstr "Protokoll"
+
+#.
+msgid "Datum"
+msgstr "Datum"
+
+#.
+msgid "Der Plugin-Cron (everysize checkout sync) läuft über den Shop-Cron; zusätzlich kann der Abgleich ausgelöst werden über:"
+msgstr "Der Plugin-Cron (everysize checkout sync) läuft über den Shop-Cron; zusätzlich kann der Abgleich ausgelöst werden über:"
+
+#.
+msgid "Der Token kann als Query-Parameter (wie oben) oder — bevorzugt, damit er nicht in Zugriffs-Logs landet — im Header X-Everysize-Token gesendet werden. Throttle: ein Abgleich höchstens alle 5 Minuten."
+msgstr "Der Token kann als Query-Parameter (wie oben) oder — bevorzugt, damit er nicht in Zugriffs-Logs landet — im Header X-Everysize-Token gesendet werden. Throttle: ein Abgleich höchstens alle 5 Minuten."
+
+#.
+msgid "Die Bestellung ist an everysize bereits widerrufen — eine Retoure ist nicht mehr möglich."
+msgstr "Die Bestellung ist an everysize bereits widerrufen — eine Retoure ist nicht mehr möglich."
+
+#.
+msgid "Diese Bestellung ist bereits vollständig erstattet."
+msgstr "Diese Bestellung ist bereits vollständig erstattet."
+
+#.
+msgid "Diesen Status bekommt eine importierte Bestellung im Shop."
+msgstr "Diesen Status bekommt eine importierte Bestellung im Shop."
+
+#.
+msgid "Einstellungen gespeichert."
+msgstr "Einstellungen gespeichert."
+
+#.
+msgid "Einträge"
+msgstr "Einträge"
+
+#.
+msgid "Ergebnis"
+msgstr "Ergebnis"
+
+#.
+msgid "Erst verfügbar, wenn der Versand an everysize gemeldet wurde — vorher ist es ein Storno über die Wawi."
+msgstr "Erst verfügbar, wenn der Versand an everysize gemeldet wurde — vorher ist es ein Storno über die Wawi."
+
+#.
+msgid "Erstatten"
+msgstr "Erstatten"
+
+#.
+msgid "erstattet"
+msgstr "erstattet"
+
+#.
+msgid "Erstattung"
+msgstr "Erstattung"
+
+#.
+msgid "Erstattung fehlgeschlagen: "
+msgstr "Erstattung fehlgeschlagen: "
+
+#.
+msgid "Erstattung über %s an everysize gemeldet (Status %s)."
+msgstr "Erstattung über %s an everysize gemeldet (Status %s)."
+
+#.
+msgid "Erstattung über everysize"
+msgstr "Erstattung über everysize"
+
+#.
+msgid "Erstattung über everysize (PayPal) auslösen?"
+msgstr "Erstattung über everysize (PayPal) auslösen?"
+
+#.
+msgid "Erstattung wurde bereits ausgelöst (gleicher Vorgang)."
+msgstr "Erstattung wurde bereits ausgelöst (gleicher Vorgang)."
+
+#.
+msgid "Erstattung wurde bereits gemeldet (gleicher Vorgang)."
+msgstr "Erstattung wurde bereits gemeldet (gleicher Vorgang)."
+
+#.
+msgid "Erstattung: Betrag ungültig (z. B. „24,89“ oder „24.89“)."
+msgstr "Erstattung: Betrag ungültig (z. B. „24,89“ oder „24.89“)."
+
+#.
+msgid "Erstattung: Formular-Schlüssel ungültig — Seite neu laden und erneut senden."
+msgstr "Erstattung: Formular-Schlüssel ungültig — Seite neu laden und erneut senden."
+
+#.
+msgid "Erstattungs-ID"
+msgstr "Erstattungs-ID"
+
+#.
+msgid "Erstattungsstatus gerade nicht abrufbar"
+msgstr "Erstattungsstatus gerade nicht abrufbar"
+
+#.
+msgid "Erstattungsstatus wird beim Öffnen der Bestellung geladen."
+msgstr "Erstattungsstatus wird beim Öffnen der Bestellung geladen."
+
+#.
+msgid "everysize Checkout — Einstellungen"
+msgstr "everysize Checkout — Einstellungen"
+
+#.
+msgid "everysize- oder JTL-Nummer suchen"
+msgstr "everysize- oder JTL-Nummer suchen"
+
+#.
+msgid "everysize-Bestellnummer"
+msgstr "everysize-Bestellnummer"
+
+#.
+msgid "everysize-Bestellung"
+msgstr "everysize-Bestellung"
+
+#.
+msgid "everysize-Bestellungen"
+msgstr "everysize-Bestellungen"
+
+#.
+msgid "everysize-Protokoll"
+msgstr "everysize-Protokoll"
+
+#.
+msgid "Fehler"
+msgstr "Fehler"
+
+#.
+msgid "gemeldet"
+msgstr "gemeldet"
+
+#.
+msgid "Grund/Betrag"
+msgstr "Grund/Betrag"
+
+#.
+msgid "Import-Bestellstatus"
+msgstr "Import-Bestellstatus"
+
+#.
+msgid "Importiert"
+msgstr "Importiert"
+
+#.
+msgid "In Bearbeitung"
+msgstr "In Bearbeitung"
+
+#.
+msgid "ja"
+msgstr "ja"
+
+#.
+msgid "Jetzt abgleichen"
+msgstr "Jetzt abgleichen"
+
+#.
+msgid "JTL-Bestellung"
+msgstr "JTL-Bestellung"
+
+#.
+msgid "Keine Einträge. Das Protokoll führt nur Läufe, die etwas bewegt oder Fehler erzeugt haben."
+msgstr "Keine Einträge. Das Protokoll führt nur Läufe, die etwas bewegt oder Fehler erzeugt haben."
+
+#.
+msgid "Keine everysize-Bestellungen gefunden."
+msgstr "Keine everysize-Bestellungen gefunden."
+
+#.
+msgid "Keine PayPal-Capture-ID — diese Bestellung kann nicht über everysize erstattet werden."
+msgstr "Keine PayPal-Capture-ID — diese Bestellung kann nicht über everysize erstattet werden."
+
+#.
+msgid "Betrag in Euro"
+msgstr "Betrag in Euro"
+
+#.
+msgid "Mappt die Carrier-Schreibweise der Wawi (tversand.cLogistik) auf everysize-Carrier."
+msgstr "Mappt die Carrier-Schreibweise der Wawi (tversand.cLogistik) auf everysize-Carrier."
+
+#.
+msgid "Meldung"
+msgstr "Meldung"
+
+#.
+msgid "Nachricht"
+msgstr "Nachricht"
+
+#.
+msgid "nein"
+msgstr "nein"
+
+#.
+msgid "Noch keine Erstattungen."
+msgstr "Noch keine Erstattungen."
+
+#.
+msgid "noch nicht"
+msgstr "noch nicht"
+
+#.
+msgid "noch nichts gemeldet"
+msgstr "noch nichts gemeldet"
+
+#.
+msgid "noch offen"
+msgstr "noch offen"
+
+#.
+msgid "Nur Import ohne Rückmeldungen:"
+msgstr "Nur Import ohne Rückmeldungen:"
+
+#.
+msgid "nur Rückmeldungen:"
+msgstr "nur Rückmeldungen:"
+
+#.
+msgid "Offen"
+msgstr "Offen"
+
+#.
+msgid "Retoure"
+msgstr "Retoure"
+
+#.
+msgid "Retoure fehlgeschlagen: "
+msgstr "Retoure fehlgeschlagen: "
+
+#.
+msgid "Retoure für %d Position(en) an everysize gemeldet."
+msgstr "Retoure für %d Position(en) an everysize gemeldet."
+
+#.
+msgid "Retoure melden (RETOUR)"
+msgstr "Retoure melden (RETOUR)"
+
+#.
+msgid "Retoure: %d gemeldet, Fehler: %s"
+msgstr "Retoure: %d gemeldet, Fehler: %s"
+
+#.
+msgid "Retoure: der Versand wurde an everysize noch nicht gemeldet."
+msgstr "Retoure: der Versand wurde an everysize noch nicht gemeldet."
+
+#.
+msgid "Retoure: die Bestellung ist an everysize bereits widerrufen."
+msgstr "Retoure: die Bestellung ist an everysize bereits widerrufen."
+
+#.
+msgid "Retoure: keine gültige Position angegeben."
+msgstr "Retoure: keine gültige Position angegeben."
+
+#.
+msgid "Retoure wurde bereits gemeldet (alle gewählten Positionen)."
+msgstr "Retoure wurde bereits gemeldet (alle gewählten Positionen)."
+
+#.
+msgid "Rückmeldungen an everysize"
+msgstr "Rückmeldungen an everysize"
+
+#.
+msgid "Seite %1$d von %2$d — %3$d Bestellungen"
+msgstr "Seite %1$d von %2$d — %3$d Bestellungen"
+
+#.
+msgid "Sendungsnummer"
+msgstr "Sendungsnummer"
+
+#.
+msgid "Sendungsnummer %s (%s) gespeichert — gemeldet beim nächsten Abgleich."
+msgstr "Sendungsnummer %s (%s) gespeichert — gemeldet beim nächsten Abgleich."
+
+#.
+msgid "Sendungsnummer: Versanddienstleister und Sendungsnummer angeben."
+msgstr "Sendungsnummer: Versanddienstleister und Sendungsnummer angeben."
+
+#.
+msgid "Speichern"
+msgstr "Speichern"
+
+#.
+msgid "Storno"
+msgstr "Storno"
+
+#.
+msgid "Suchen"
+msgstr "Suchen"
+
+#.
+msgid "Summe"
+msgstr "Summe"
+
+#.
+msgid "Teilversandt"
+msgstr "Teilversandt"
+
+#.
+msgid "Testumgebung"
+msgstr "Testumgebung"
+
+#.
+msgid "Titel"
+msgstr "Titel"
+
+#.
+msgid "übersprungen"
+msgstr "übersprungen"
+
+#.
+msgid "Unbekannte Aktion."
+msgstr "Unbekannte Aktion."
+
+#.
+msgid "Ungültige API-URL"
+msgstr "Ungültige API-URL"
+
+#.
+msgid "Verbindung fehlgeschlagen: "
+msgstr "Verbindung fehlgeschlagen: "
+
+#.
+msgid "Verbindung OK — everysize-Shop-ID: %d (API: %s)"
+msgstr "Verbindung OK — everysize-Shop-ID: %d (API: %s)"
+
+#.
+msgid "Verbindung testen"
+msgstr "Verbindung testen"
+
+#.
+msgid "Versand"
+msgstr "Versand"
+
+#.
+msgid "Versand offen"
+msgstr "Versand offen"
+
+#.
+msgid "Versandart für importierte Bestellungen"
+msgstr "Versandart für importierte Bestellungen"
+
+#.
+msgid "Versanddienstleister"
+msgstr "Versanddienstleister"
+
+#.
+msgid "Versandt"
+msgstr "Versandt"
+
+#.
+msgid "versandt gemeldet"
+msgstr "versandt gemeldet"
+
+#.
+msgid "vom Checkout übermittelt, informativ"
+msgstr "vom Checkout übermittelt, informativ"
+
+#.
+msgid "Vom Händler abgelehnt"
+msgstr "Vom Händler abgelehnt"
+
+#.
+msgid "Vom Kunden widerrufen"
+msgstr "Vom Kunden widerrufen"
+
+#.
+msgid "weiter"
+msgstr "weiter"
+
+#.
+msgid "Zeit"
+msgstr "Zeit"
+
+#.
+msgid "Zeitsteuerung"
+msgstr "Zeitsteuerung"
+
+#.
+msgid "Zugangsdaten"
+msgstr "Zugangsdaten"
+
+#.
+msgid "Zugangsdaten entfernen"
+msgstr "Zugangsdaten entfernen"
+
+#.
+msgid "Zugangsdaten entfernt — der Abgleich ruht, bis neue eingetragen sind."
+msgstr "Zugangsdaten entfernt — der Abgleich ruht, bis neue eingetragen sind."
+
+#.
+msgid "Zugangsdaten wirklich entfernen? Der Abgleich ruht dann, bis neue eingetragen sind."
+msgstr "Zugangsdaten wirklich entfernen? Der Abgleich ruht dann, bis neue eingetragen sind."
+
+#.
+msgid "zurück"
+msgstr "zurück"
+
+#.
+msgid "zurücksetzen"
+msgstr "zurücksetzen"
+
+#.
+msgid "Original-E-Mail"
+msgstr "Original-E-Mail"
+
+#.
+msgid "PayPal-Transaktion"
+msgstr "PayPal-Transaktion"
+
+#.
+msgid "Produktumgebung"
+msgstr "Produktumgebung"
+
+#.
+msgid "Retoure für die gewählten Positionen an everysize melden?"
+msgstr "Retoure für die gewählten Positionen an everysize melden?"
+
+#.
+msgid "Seiten"
+msgstr "Seiten"
+
+#.
+msgid "Sendungsnummer speichern und beim nächsten Abgleich melden?"
+msgstr "Sendungsnummer speichern und beim nächsten Abgleich melden?"
+
+#.
+msgid "Status"
+msgstr "Status"
+
+#.
+msgid "offen"
+msgstr "offen"
+
+#.
+msgid "storniert"
+msgstr "storniert"

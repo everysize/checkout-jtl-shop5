@@ -1,0 +1,12 @@
+{
+    "name": "everysize/checkout-jtl-shop5",
+    "description": "everysize Checkout for JTL-Shop 5: imports everysize orders and reports shipping, tracking codes, cancellations, returns and refunds.",
+    "type": "jtl-plugin",
+    "license": "MIT",
+    "homepage": "https://www.everysize.com",
+    "require": {
+        "php": ">=8.1",
+        "ext-curl": "*",
+        "ext-json": "*"
+    }
+}

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jtlshopplugin>
+	<Name>everysize Checkout</Name>
+	<Description>everysize Checkout-Bestellungen in JTL-Shop importieren und Bestellnummer, Versand, Sendungsnummern, Storno, Retoure und Erstattungen zurueckmelden.</Description>
+	<Author>everysize GmbH</Author>
+	<URL>https://www.everysize.com</URL>
+	<XMLVersion>100</XMLVersion>
+	<MinShopVersion>5.2.0</MinShopVersion>
+	<PluginID>everysize_checkout</PluginID>
+	<Version>1.0.2</Version>
+	<CreateDate>2026-10-14</CreateDate>
+	<Install>
+		<FlushTags>CACHING_GROUP_OPTION, CACHING_GROUP_ARTICLE</FlushTags>
+		<PaymentMethod>
+			<Method>
+				<Name>everysize Checkout (PayPal)</Name>
+				<Sort>99</Sort>
+				<SendMail>0</SendMail>
+				<Provider>everysize</Provider>
+				<TSCode>OTHER</TSCode>
+				<PreOrder>0</PreOrder>
+				<Soap>0</Soap>
+				<Curl>0</Curl>
+				<Sockets>0</Sockets>
+				<ClassFile>PaymentMethod.php</ClassFile>
+				<ClassName>PaymentMethod</ClassName>
+				<MethodLanguage iso="GER">
+					<Name>everysize Checkout (PayPal)</Name>
+					<ChargeName>everysize Checkout (PayPal)</ChargeName>
+					<InfoText>Zahlung ueber everysize Checkout (PayPal). Diese Zahlungsart wird beim Bestellimport gesetzt und ist im Bestellprozess nicht auswaehlbar.</InfoText>
+				</MethodLanguage>
+				<MethodLanguage iso="ENG">
+					<Name>everysize Checkout (PayPal)</Name>
+					<ChargeName>everysize Checkout (PayPal)</ChargeName>
+					<InfoText>Payment via everysize Checkout (PayPal). Set on imported orders, not selectable in the checkout.</InfoText>
+				</MethodLanguage>
+			</Method>
+		</PaymentMethod>
+		<Adminmenu>
+			<Customlink sort="1">
+				<Name>Bestellungen</Name>
+				<Filename>everysize_orders.php</Filename>
+			</Customlink>
+			<Customlink sort="2">
+				<Name>Einstellungen</Name>
+				<Filename>everysize_settings.php</Filename>
+			</Customlink>
+			<Customlink sort="3">
+				<Name>Protokoll</Name>
+				<Filename>everysize_protocol.php</Filename>
+			</Customlink>
+		</Adminmenu>
+	</Install>
+</jtlshopplugin>
