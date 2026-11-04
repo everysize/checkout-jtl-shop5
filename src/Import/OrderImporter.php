@@ -44,7 +44,7 @@ class OrderImporter
     /**
      * @param array<string, mixed> $esOrder order as returned by the everysize API
      *
-     * @return array{orderId: int, orderNumber: string, warnings: string[]}
+     * @return array{orderId: int, orderNumber: string, warnings: string[], report: array<int, array{sku: string, shopPrice: ?string, stock: ?int}>}
      */
     public function import(array $esOrder): array
     {
@@ -62,7 +62,10 @@ class OrderImporter
 
         $this->requireShopCurrency($esOrder['currency'] ?? 'EUR');
         $paymentMethod = $this->paymentMethod();
-        $lines = $this->resolveLines($esOrder['lineItems'] ?? null, $shipping['countryIso']);
+        // Cancelled orders are neither checked against the shop nor reported.
+        $reportable = ImportReport::isReportable((string) ($esOrder['status'] ?? ''));
+        $lines = $this->resolveLines($esOrder['lineItems'] ?? null, $shipping['countryIso'], $reportable);
+        $report = [];
         $prices = PriceCalculator::calculate(
             array_map(static function (array $line): array {
                 return ['gross' => $line['gross'], 'quantity' => $line['quantity'], 'vat' => $line['vat']];
@@ -159,9 +162,14 @@ class OrderImporter
             foreach ($lines as $line) {
                 $article = $line['article'];
                 $stockBefore = 0.0;
+                $stockWarned = false;
                 if ((string) $article['cLagerBeachten'] === 'Y') {
                     $stockBefore = (float) ($article['stock'] ?? 0);
-                    if ($stockBefore < $line['quantity'] * (float) $article['fPackeinheit']) {
+                    // Only an article whose sale is really limited by the stock is "oversold":
+                    // with cLagerKleinerNull = 'Y' the shop sells below zero on purpose.
+                    if ((string) $article['cLagerKleinerNull'] !== 'Y'
+                        && $stockBefore < $line['quantity'] * (float) $article['fPackeinheit']) {
+                        $stockWarned = true;
                         $warnings[] = sprintf(
                             '%s: article %s stock %s is below the ordered amount %d',
                             $everysizeOrderId,
@@ -170,6 +178,14 @@ class OrderImporter
                             $line['quantity']
                         );
                     }
+                }
+                if ($line['report'] !== null) {
+                    $report[] = $line['report'];
+                    // The stock warning above already covers an oversold article.
+                    $warnings = array_merge(
+                        $warnings,
+                        ImportReport::warnings($everysizeOrderId, $line['report'], $line['gross'], $line['quantity'], $stockWarned)
+                    );
                 }
                 $positionId = $db->insert('twarenkorbpos', [
                     'kWarenkorb' => $basketId,
@@ -251,13 +267,13 @@ class OrderImporter
             }
         }
 
-        return ['orderId' => $orderId, 'orderNumber' => $orderNumber, 'warnings' => $warnings];
+        return ['orderId' => $orderId, 'orderNumber' => $orderNumber, 'warnings' => $warnings, 'report' => $report];
     }
 
     /**
-     * @return array<int, array{sku: string, title: string, quantity: int, gross: float, vat: float, unitNet: float, article: array{id: int, artNr: string, name: string, vat: float, fPackeinheit: float, cLagerBeachten: string, stock: float}}>
+     * @return array<int, array{sku: string, title: string, quantity: int, gross: float, vat: float, unitNet: float, article: array{id: int, artNr: string, name: string, vat: float, fPackeinheit: float, cLagerBeachten: string, cLagerKleinerNull: string, stock: float}, report: ?array{sku: string, shopPrice: ?string, stock: ?int}}>
      */
-    private function resolveLines($lineItems, string $countryIso): array
+    private function resolveLines($lineItems, string $countryIso, bool $reportable = false): array
     {
         if (!\is_array($lineItems) || $lineItems === []) {
             throw new ImportException('everysize order has no line items');
@@ -283,6 +299,7 @@ class OrderImporter
                 'vat' => $vat,
                 'unitNet' => $unitGross / (1 + $vat / 100),
                 'article' => $article,
+                'report' => $reportable ? $this->reportEntry($sku, $article) : null,
             ];
         }
 
@@ -296,12 +313,12 @@ class OrderImporter
      * is never a buyable variant and is excluded. Two equally good
      * candidates are an error.
      *
-     * @return array{kArtikel: int, cArtNr: string, cName: string, kSteuerklasse: int, fPackeinheit: float, cLagerBeachten: string, stock: float, kVaterArtikel: int}
+     * @return array{kArtikel: int, cArtNr: string, cName: string, kSteuerklasse: int, fPackeinheit: float, cLagerBeachten: string, cLagerKleinerNull: string, stock: float, kVaterArtikel: int}
      */
     private function findArticle(string $sku): array
     {
         $rows = $this->db->getObjects(
-            'SELECT kArtikel, cArtNr, cName, kSteuerklasse, fPackeinheit, cLagerBeachten, fLagerbestand, kVaterArtikel,
+            'SELECT kArtikel, cArtNr, cName, kSteuerklasse, fPackeinheit, cLagerBeachten, cLagerKleinerNull, fLagerbestand, kVaterArtikel,
                     (BINARY cArtNr = :exact) AS exactMatch
              FROM tartikel
              WHERE cArtNr = :sku AND nIstVater = 0
@@ -324,9 +341,82 @@ class OrderImporter
             'kSteuerklasse' => (int) $article->kSteuerklasse,
             'fPackeinheit' => (float) $article->fPackeinheit,
             'cLagerBeachten' => (string) $article->cLagerBeachten,
+            'cLagerKleinerNull' => (string) ($article->cLagerKleinerNull ?? ''),
             'stock' => (float) $article->fLagerbestand,
             'kVaterArtikel' => (int) $article->kVaterArtikel,
         ];
+    }
+
+    /**
+     * What the shop has for the article right now, read before anything is
+     * written (the import reduces the stock). Information only: whatever
+     * goes wrong here, the line gets an empty report value instead of an error.
+     *
+     * @param array{id: int, fPackeinheit: float, cLagerBeachten: string, cLagerKleinerNull: string, stock: float} $article
+     *
+     * @return array{sku: string, shopPrice: ?string, stock: ?int}
+     */
+    private function reportEntry(string $sku, array $article): array
+    {
+        try {
+            $stock = ImportReport::stock($article['cLagerBeachten'], $article['cLagerKleinerNull'], $article['stock'], $article['fPackeinheit']);
+        } catch (\Throwable $e) {
+            $stock = null;
+        }
+
+        return ImportReport::entry($sku, $this->shopGrossPrice($article['id'], (int) ($article['kSteuerklasse'] ?? 0)), $stock);
+    }
+
+    /**
+     * Price the shop asks from a domestic customer: standard price (tpreis/
+     * tpreisdetail, base quantity, no customer price, kKunde NULL or 0) of the
+     * default customer group, replaced by an active special price when that
+     * is lower (same conditions as the core, Preise::getSpecialPrice()), net
+     * in the database, converted with the tax rate of the shop's default
+     * country (not the delivery country, so that foreign deliveries do not
+     * raise false alarms). Null if there is no price or the default country
+     * tax cannot be determined for sure.
+     */
+    private function shopGrossPrice(int $articleId, int $taxClassId): ?float
+    {
+        try {
+            $groupId = $this->defaultCustomerGroupId();
+            if ($groupId <= 0) {
+                return null;
+            }
+            $country = $this->shop->defaultTaxCountry();
+            $vat = $country !== null && $country !== '' ? $this->shop->taxRateFor($taxClassId, $country) : null;
+            if ($vat === null) {
+                return null;
+            }
+            $net = $this->db->getScalar(
+                'SELECT d.fVKNetto FROM tpreis p JOIN tpreisdetail d ON d.kPreis = p.kPreis
+                 WHERE p.kArtikel = :id AND p.kKundengruppe = :group AND (p.kKunde IS NULL OR p.kKunde = 0)
+                 ORDER BY d.nAnzahlAb ASC LIMIT 1',
+                ['id' => $articleId, 'group' => $groupId]
+            );
+            if ($net === null || !is_numeric($net) || (float) $net <= 0) {
+                return null;
+            }
+            $net = (float) $net;
+            $special = $this->db->getScalar(
+                "SELECT sp.fNettoPreis FROM tsonderpreise sp
+                 JOIN tartikel a ON a.kArtikel = :id
+                 JOIN tartikelsonderpreis asp ON asp.kArtikelSonderpreis = sp.kArtikelSonderpreis
+                    AND asp.kArtikel = :id AND asp.cAktiv = 'Y'
+                    AND asp.dStart <= CURDATE() AND (asp.dEnde IS NULL OR asp.dEnde >= CURDATE())
+                    AND (asp.nAnzahl <= a.fLagerbestand OR asp.nIstAnzahl = 0)
+                 WHERE sp.kKundengruppe = :group LIMIT 1",
+                ['id' => $articleId, 'group' => $groupId]
+            );
+            if ($special !== null && is_numeric($special) && (float) $special > 0 && (float) $special < $net) {
+                $net = (float) $special;
+            }
+
+            return $net * (1 + $vat / 100);
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**

@@ -6,6 +6,7 @@ namespace Plugin\everysize_checkout\Export;
 
 use Plugin\everysize_checkout\Api\ApiException;
 use Plugin\everysize_checkout\Api\Client;
+use Plugin\everysize_checkout\ManualRefund;
 use Plugin\everysize_checkout\OrderLinks;
 use Plugin\everysize_checkout\Settings;
 
@@ -32,15 +33,25 @@ use Plugin\everysize_checkout\Settings;
  * have that code yet (orders shipped with 1.0.0 have no remembered code).
  *
  * A cancellation before shipping (MERCHANT_DECLINE) is refunded in full
- * through everysize afterwards, unless switched off: nothing was shipped, so
- * the customer is owed everything. Returns are left to the merchant (goods
- * first). The idempotency key is fixed per order, so a repeated run never
- * refunds twice; transport errors are retried, a refusal is recorded once.
+ * through everysize afterwards, unless switched off: nothing was shipped (no
+ * status, shipping date, delivery note or tracking code, also none entered by
+ * hand), so the customer is owed everything. Before that the refund list is
+ * read: any refund COMPLETED or PENDING (also one made directly in PayPal)
+ * stops it and is recorded; a list that cannot be read skips the run. Returns
+ * are left to the merchant (goods first). The idempotency key is fixed per
+ * order, so a repeated run never refunds twice; transport errors are retried
+ * with the same key, a refusal is recorded once.
  */
 class StatusExporter
 {
     /** A tracking code entered later is reported up to this many days after shipping. */
     public const TRACKING_DAYS = 14;
+
+    /** Reason of the automatic-refund report when everysize already lists a refund. */
+    public const REFUNDS_EXIST = 'REFUNDS_EXIST';
+
+    /** Reason of the automatic-refund report that marks a cancellation the run excluded (A13). */
+    public const BLOCKED = 'BLOCKED';
 
     private Client $client;
 
@@ -61,6 +72,10 @@ class StatusExporter
     public function export(): array
     {
         $result = ['fulfillments' => 0, 'trackingCodes' => 0, 'revocations' => 0, 'returns' => 0, 'autoRefunds' => 0, 'skipped' => 0, 'pending' => 0, 'errors' => []];
+
+        // Orders whose shipping report failed (now or earlier) and is still to be made up: their revocation waits,
+        // it would go out as MERCHANT_DECLINE although the goods are on their way.
+        $failedFulfillments = [];
 
         foreach ($this->links->getPendingFulfillments() as $row) {
             ++$result['pending'];
@@ -84,6 +99,10 @@ class StatusExporter
                 }
                 ++$result['fulfillments'];
             } catch (ApiException $e) {
+                // The order was shipped, only everysize does not know yet: remember that (shipping proof for
+                // revocation and automatic refund) and report it again in the next run.
+                $this->links->markFulfillmentFailed((int) $row->kBestellung);
+                $failedFulfillments[(int) $row->kBestellung] = true;
                 $result['errors'][] = sprintf('Order %s (%s): %s', $row->cBestellNr, $row->everysize_order_id, $e->getMessage());
             }
         }
@@ -126,7 +145,13 @@ class StatusExporter
             }
         }
 
+        $revokedNoted = [];
         foreach ($this->links->getPendingRevocations() as $row) {
+            $orderId = (int) $row->ORDERID;
+            if (isset($failedFulfillments[$orderId]) || ($this->links->hasFailedFulfillment($orderId) && !$this->links->hasFulfillmentReport($orderId))) {
+                $result['errors'][] = sprintf('Order %s (%s): shipping report not made yet, revocation of %s waits (next run)', $row->cBestellNr, $row->everysize_order_id, $row->sku);
+                continue;
+            }
             ++$result['pending'];
             $isReturn = $this->links->hasSentFulfillment((int) $row->ORDERID) || (int) $row->shipped === 1;
             $reason = $isReturn ? Client::REASON_RETOUR : Client::REASON_MERCHANT_DECLINE;
@@ -134,6 +159,17 @@ class StatusExporter
                 if ($this->isRevokedAtEverysize($row->everysize_order_id)) {
                     $this->links->addReport((int) $row->ORDERID, OrderLinks::KIND_REVOCATION, (string) $row->sku, $reason, OrderLinks::RESULT_SKIPPED);
                     ++$result['skipped'];
+                    // Revoked at everysize already (the partner): the revocation is not reported, so there is no
+                    // automatic refund either (both queries need a sent revocation). Not silently: one note (the report
+                    // row writes it only the first time; at most one message per order and run).
+                    if (!$isReturn && !isset($revokedNoted[$orderId])) {
+                        $revokedNoted[$orderId] = true;
+                        $result['errors'][] = sprintf(
+                            'Order %s (%s): already revoked at everysize, cancellation not reported and NOT refunded automatically - please check and refund on the order page if it is due',
+                            $row->cBestellNr,
+                            $row->everysize_order_id
+                        );
+                    }
                     continue;
                 }
 
@@ -145,38 +181,164 @@ class StatusExporter
             }
         }
 
-        // From when the setting was switched on, and no older than TRACKING_DAYS (a lasting outage is not retried forever).
-        $since = $this->settings->getAutoRefundSince();
-        $since = $since !== '' ? max($since, date('Y-m-d H:i:s', time() - self::TRACKING_DAYS * 86400)) : '';
-        $declined = $this->settings->isAutoRefundDecline() && $since !== '' ? $this->links->getPendingAutoRefunds($since) : [];
-        foreach ($declined as $row) {
-            ++$result['pending'];
+        $this->autoRefunds($result);
+
+        return $result;
+    }
+
+    /**
+     * Automatic refund after a cancellation before shipping (R4, A2). The run sends AT MOST ONCE per order: the
+     * entry is reserved, the list is read and its refundIds stored, then one POST. An open entry is afterwards only
+     * checked against the list (a match closes it as a success); it is never sent again by a run, only by a human.
+     * Before the one send the setting and the conditions R4 asks for are checked again for exactly that order.
+     * Each order on its own: nothing aborts the run.
+     *
+     * @param array<string, mixed> $result
+     */
+    private function autoRefunds(array &$result): void
+    {
+        $refunds = new ManualRefund($this->links, $this->client);
+
+        // Open entries: checked against the list only; every one older than 15 minutes (since it was CREATED) is an
+        // error in each run.
+        foreach ($this->links->getOpenRefundOrders() as $row) {
+            $orderId = (int) $row->kBestellung;
             try {
-                $refund = $this->client->refund($row->everysize_order_id, null, OrderLinks::AUTO_REFUND . '-' . $row->everysize_order_id);
-                $status = strtoupper((string) ($refund['status'] ?? ''));
-                if ($status === 'ALREADY_REFUNDED') {
-                    $this->links->addReport((int) $row->kBestellung, OrderLinks::KIND_REFUND, OrderLinks::AUTO_REFUND, $status, OrderLinks::RESULT_KNOWN);
+                $open = $this->links->openRefund($orderId);
+                if ($open === null) {
                     continue;
                 }
-                $this->links->addReport((int) $row->kBestellung, OrderLinks::KIND_REFUND, OrderLinks::AUTO_REFUND, (string) ($refund['refundId'] ?? $status), OrderLinks::RESULT_SENT);
-                ++$result['autoRefunds'];
-            } catch (ApiException $e) {
-                // No answer or a server error: try again next run. A refusal (not refundable, PayPal said no) stays as it is.
-                $retry = $e->getStatus() === 0 || ($e->getStatus() >= 500 && $e->getReason() !== 'PAYPAL_REFUND_FAILED');
-                if (!$retry) {
-                    $this->links->addReport((int) $row->kBestellung, OrderLinks::KIND_REFUND, OrderLinks::AUTO_REFUND, mb_substr($e->getReason() !== '' ? $e->getReason() : 'HTTP ' . $e->getStatus(), 0, 32), OrderLinks::RESULT_SKIPPED);
+                if (time() - (int) strtotime($open->created_at) > 900) {
+                    $result['errors'][] = sprintf(
+                        'Order %s (%s): refund of %s still unclear since %s, please check PayPal and the order page',
+                        $row->cBestellNr,
+                        $row->everysize_order_id,
+                        $open->amount !== '' ? $open->amount : '?',
+                        $open->created_at
+                    );
                 }
-                $result['errors'][] = sprintf(
-                    'Order %s (%s): automatic refund after cancellation failed%s: %s',
-                    $row->cBestellNr,
-                    $row->everysize_order_id,
-                    $retry ? ' (retried next run)' : ', please refund on the order page',
-                    $e->getMessage()
-                );
+                if (str_starts_with($open->key, OrderLinks::AUTO_REFUND . '-')) {
+                    ++$result['pending'];
+                    $this->noteAutoOutcome($refunds->checkOnly($orderId, (string) $row->everysize_order_id), $row, $result);
+                }
+            } catch (\Throwable $e) {
+                $result['errors'][] = sprintf('Order %s (%s): %s', $row->cBestellNr ?? '?', $row->everysize_order_id ?? '?', $e->getMessage());
             }
         }
 
-        return $result;
+        // From when the setting was switched on, and no older than TRACKING_DAYS (a lasting outage is not retried forever).
+        $since = $this->settings->getAutoRefundSince();
+        $since = $since !== '' ? max($since, date('Y-m-d H:i:s', time() - self::TRACKING_DAYS * 86400)) : '';
+        if (!$this->settings->isAutoRefundDecline() || $since === '') {
+            return;
+        }
+        $declined = $this->links->getPendingAutoRefunds($since);
+        foreach ($declined as $row) {
+            ++$result['pending'];
+            $orderId = (int) $row->kBestellung;
+            try {
+                if ($this->links->openRefund($orderId) !== null) {
+                    continue; // an open entry blocks everything else
+                }
+                // The setting and R4 for exactly this order, right before the one send.
+                if (!$this->stillEligible($orderId, $since) || !$this->settings->isAutoRefundDecline()) {
+                    continue;
+                }
+                $outcome = $refunds->sendAutomatic($orderId, (string) $row->everysize_order_id, OrderLinks::AUTO_REFUND . '-' . $row->everysize_order_id);
+                if ($outcome['outcome'] === ManualRefund::REFUNDS_EXIST) {
+                    $this->links->addReport($orderId, OrderLinks::KIND_REFUND, OrderLinks::AUTO_REFUND, self::REFUNDS_EXIST, OrderLinks::RESULT_SKIPPED);
+                    ++$result['skipped'];
+                    $result['errors'][] = sprintf(
+                        'Order %s (%s): automatic refund not made, everysize already lists a refund (PayPal), please check on the order page',
+                        $row->cBestellNr,
+                        $row->everysize_order_id
+                    );
+                    continue;
+                }
+                $this->noteAutoOutcome($outcome, $row, $result);
+            } catch (\Throwable $e) {
+                $result['errors'][] = sprintf('Order %s (%s): %s', $row->cBestellNr ?? '?', $row->everysize_order_id ?? '?', $e->getMessage());
+            }
+        }
+
+        // A13: a cancellation the query excluded (shipped, tracking code, delivery note, credit ...) must not wait
+        // silently: say so once (the marker report keeps the automatic refund off and the note from repeating).
+        try {
+            $candidateIds = array_map(static fn (object $r): int => (int) $r->kBestellung, $declined);
+            foreach ($this->links->getCancelledDeclines($since) as $row) {
+                if (\in_array((int) $row->kBestellung, $candidateIds, true)) {
+                    continue;
+                }
+                $this->links->addReport((int) $row->kBestellung, OrderLinks::KIND_REFUND, OrderLinks::AUTO_REFUND, self::BLOCKED, OrderLinks::RESULT_SKIPPED);
+                $result['errors'][] = sprintf(
+                    'Order %s (%s): cancelled before shipping but NOT refunded automatically (shipped, tracking code, delivery note or an earlier refund was found) - please check and refund on the order page if it is due',
+                    $row->cBestellNr,
+                    $row->everysize_order_id
+                );
+            }
+        } catch (\Throwable $e) {
+            $result['errors'][] = 'blocked cancellations check failed: ' . $e->getMessage();
+        }
+    }
+
+    /** R4 again for exactly this order, right before the send. */
+    private function stillEligible(int $orderId, string $since): bool
+    {
+        foreach ($this->links->getPendingAutoRefunds($since) as $row) {
+            if ((int) $row->kBestellung === $orderId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $outcome
+     * @param array<string, mixed> $result
+     */
+    private function noteAutoOutcome(array $outcome, object $row, array &$result): void
+    {
+        $label = sprintf('Order %s (%s)', $row->cBestellNr, $row->everysize_order_id);
+        switch ($outcome['outcome']) {
+            case ManualRefund::DONE:
+            case ManualRefund::ADOPTED:
+                ++$result['autoRefunds'];
+                if (($outcome['warning'] ?? '') !== '') {
+                    $result['errors'][] = $label . ': ' . $outcome['warning'];
+                }
+                break;
+            case ManualRefund::REJECTED:
+                $result['errors'][] = $label . ': automatic refund after cancellation rejected, please refund on the order page: ' . $outcome['message'];
+                break;
+            case ManualRefund::UNCLEAR:
+                $result['errors'][] = $label . ': automatic refund result unclear, the money may have been paid out - checked again from 150 s on after reading the PayPal list: ' . $outcome['message'];
+                break;
+            case ManualRefund::BEFORE_POST:
+                $result['errors'][] = $label . ': automatic refund not sent (token request failed), next run: ' . $outcome['message'];
+                break;
+            case ManualRefund::LIST_UNREADABLE:
+                $result['errors'][] = $label . ': refunds not readable, nothing sent (next run)';
+                break;
+            default:
+                break;
+        }
+    }
+
+    /**
+     * A refund that took effect or is on its way (COMPLETED or PENDING) - a FAILED or CANCELLED one never did.
+     *
+     * @param array<int, array<string, mixed>> $list
+     */
+    private function hasEffective(array $list): bool
+    {
+        foreach ($list as $refund) {
+            if (\in_array(strtoupper((string) ($refund['status'] ?? '')), ['COMPLETED', 'PENDING'], true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function isRevokedAtEverysize(string $everysizeOrderId): bool

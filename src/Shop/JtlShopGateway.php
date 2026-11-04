@@ -63,6 +63,24 @@ final class JtlShopGateway implements ShopGateway
         return $rate !== null ? (float) $rate->fSteuersatz : null;
     }
 
+    public function defaultTaxCountry(): ?string
+    {
+        if (\defined('STEUERSATZ_STANDARD_LAND')) {
+            $iso = strtoupper(trim((string) \constant('STEUERSATZ_STANDARD_LAND')));
+
+            return $iso !== '' ? $iso : null;
+        }
+        $company = Shop::Container()->getDB()->getSingleObject('SELECT cLand FROM tfirma LIMIT 1');
+        $name = $company !== null ? trim((string) ($company->cLand ?? '')) : '';
+        if ($name === '') {
+            // Like the core: no company country means DE.
+            return 'DE';
+        }
+        $iso = Shop::Container()->getCountryService()->getIsoByCountryName($name);
+
+        return $iso !== null && $iso !== '' ? strtoupper($iso) : null;
+    }
+
     public function flushArticleCache(int $articleId): void
     {
         if ($articleId > 0) {

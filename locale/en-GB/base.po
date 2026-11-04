@@ -3,8 +3,8 @@ msgid ""
 msgstr "Content-Type: text/plain; charset=UTF-8\n"
 
 #.
-msgid "Die Erstattung läuft über everysize (PayPal) — Gutschriften in JTL-Wawi bewegen kein Geld. Der Restbetrag ist vorbelegt. Ein Storno vor dem Versand ohne bisherige Erstattung wird automatisch voll erstattet (Einstellung „Automatische Erstattung“)."
-msgstr "The refund runs through everysize (PayPal) — credit notes in JTL-Wawi do not move any money. The remaining amount is prefilled. A cancellation before shipping without any earlier refund is refunded in full automatically (setting “Automatic refund”)."
+msgid "Die Erstattung läuft über everysize (PayPal) — Gutschriften in JTL-Wawi bewegen kein Geld. Der Restbetrag ist vorbelegt. Ein Storno vor dem Versand ohne bisherige Erstattung wird automatisch voll erstattet (Einstellung „Automatische Erstattung“) – nur wenn nachweislich nichts versendet wurde und die Bestellung bei everysize nicht schon widerrufen ist; sonst steht ein Hinweis im Protokoll."
+msgstr "The refund runs through everysize (PayPal) — credit notes in JTL-Wawi do not move any money. The remaining amount is prefilled. A cancellation before shipping without any earlier refund is refunded in full automatically (setting “Automatic refund”) – only if nothing was provably shipped and the order is not already revoked at everysize; otherwise a note appears in the protocol."
 
 #.
 msgid "Die Retoure ist für alle Positionen bereits gemeldet."
@@ -593,3 +593,125 @@ msgstr "open"
 #.
 msgid "storniert"
 msgstr "cancelled"
+
+
+#.
+msgid "Erstattung: Es sind nur noch %s offen. Bitte höchstens diesen Betrag erstatten."
+msgstr "Refund: only %s is still open. Please refund at most this amount."
+
+
+#.
+msgid "Erstattung abgelehnt, es ist kein Geld geflossen: "
+msgstr "Refund rejected, no money was paid out: "
+
+#.
+msgid "Ergebnis unklar"
+msgstr "Result unclear"
+
+#.
+msgid "den Rest"
+msgstr "the rest"
+
+#.
+msgid "Erstattung: Ein früherer Aufruf über %s hat kein klares Ergebnis. Solange er offen ist, wird nichts anderes erstattet. Bitte ihn zuerst prüfen (PayPal), wiederholen oder als geklärt markieren."
+msgstr "Refund: an earlier call for %s has no clear result. While it is open nothing else is refunded. Please check it first (PayPal), repeat it or mark it as cleared."
+
+#.
+msgid "Erstattung: Ein früherer Aufruf über %s hat kein klares Ergebnis. Es wird nichts Weiteres gesendet. Bitte ihn zuerst prüfen (PayPal), wiederholen oder als geklärt markieren."
+msgstr "Refund: an earlier call for %s has no clear result. Nothing further is sent. Please check it first (PayPal), repeat it or mark it as cleared."
+
+#.
+msgid "Erstattung nicht gesendet: Die Erstattungen haben sich seit dem Laden der Seite geändert. Bitte neu laden."
+msgstr "Refund not sent: the refunds changed since the page was loaded. Please reload."
+
+#.
+msgid "Erstattung nicht gesendet: Die Erstattungen bei everysize sind gerade nicht lesbar. Bitte später erneut versuchen."
+msgstr "Refund not sent: the refunds at everysize cannot be read right now. Please try again later."
+
+#.
+msgid "Erstattung nicht gesendet: Für diese Bestellung läuft gerade ein anderer Erstattungsaufruf. Bitte später prüfen."
+msgstr "Refund not sent: another refund call is running for this order. Please check later."
+
+#.
+msgid "Der Erstattungsaufruf läuft möglicherweise noch. Bitte in %d Sekunden erneut prüfen."
+msgstr "The refund call may still be running. Please check again in %d seconds."
+
+#.
+msgid "Es gibt keinen offenen Erstattungsvorgang."
+msgstr "There is no open refund."
+
+#.
+msgid "Der offene Vorgang ist unvollständig. Bitte in PayPal prüfen und als geklärt markieren."
+msgstr "The open refund is incomplete. Please check in PayPal and mark it as cleared."
+
+#.
+msgid "Erstattung nicht gesendet: Die Anmeldung bei everysize ist gescheitert, es ist nichts passiert. "
+msgstr "Refund not sent: the login at everysize failed, nothing happened. "
+
+#.
+msgid "Erstattung über %s: Ergebnis unklar. Das Geld kann geflossen sein. Bitte in PayPal prüfen; erst danach wiederholen oder als geklärt markieren. (%s)"
+msgstr "Refund of %s: result unclear. The money may have been paid out. Please check in PayPal; only then repeat or mark as cleared. (%s)"
+
+#.
+msgid "Die Erstattung ist bei PayPal bereits gebucht (%s). Sie wurde übernommen, es wurde nichts gesendet."
+msgstr "The refund is already booked at PayPal (%s). It was adopted, nothing was sent."
+
+#.
+msgid "Der offene Vorgang wurde als geklärt markiert. Es wurde nichts gesendet; die automatische Erstattung bleibt für diese Bestellung aus."
+msgstr "The open refund was marked as cleared. Nothing was sent; the automatic refund stays off for this order."
+
+#.
+msgid "Erstattung: Seite neu laden und erneut senden."
+msgstr "Refund: reload the page and send again."
+
+#.
+msgid "als geklärt markiert"
+msgstr "marked as cleared"
+
+#.
+msgid "abgelehnt"
+msgstr "rejected"
+
+#.
+msgid "Ergebnis unbekannt"
+msgstr "result unknown"
+
+#.
+msgid "Ergebnis unklar — das Geld kann geflossen sein."
+msgstr "Result unclear — the money may have been paid out."
+
+#.
+msgid "Ein Erstattungsaufruf über %s (Beginn %s, zuletzt gesendet %s) hat keine klare Antwort bekommen. Solange er offen ist, wird nichts anderes erstattet, auch nicht automatisch. Bitte zuerst in PayPal prüfen."
+msgstr "A refund call for %s (started %s, last sent %s) got no clear answer. While it is open nothing else is refunded, not even automatically. Please check in PayPal first."
+
+#.
+msgid "Der Aufruf läuft möglicherweise noch — bitte in %d Sekunden erneut prüfen."
+msgstr "The call may still be running — please check again in %d seconds."
+
+#.
+msgid "Wiederholen: Es wird zuerst die PayPal-Liste gelesen. Steht die Erstattung dort nicht, wird der Betrag jetzt gesendet. Ging die erste Anfrage nicht durch, wird er jetzt ausgezahlt. Fortfahren?"
+msgstr "Repeat: the PayPal list is read first. If the refund is not listed there, the amount is sent now. If the first request did not go through, it is paid out now. Continue?"
+
+#.
+msgid "Wiederholen"
+msgstr "Repeat"
+
+#.
+msgid "Als geklärt markieren: Es wird nichts gesendet. Der Vorgang wird beendet, die automatische Erstattung bleibt für diese Bestellung aus. Fortfahren?"
+msgstr "Mark as cleared: nothing is sent. The refund is ended, the automatic refund stays off for this order. Continue?"
+
+#.
+msgid "Als geklärt markieren"
+msgstr "Mark as cleared"
+
+#.
+msgid "Die Wiederholung wurde vom Checkout abgelehnt, der Vorgang bleibt offen. Bitte in PayPal prüfen und ihn als geklärt markieren. "
+msgstr "The repeat was refused by the checkout, the refund stays open. Please check in PayPal and mark it as cleared. "
+
+#.
+msgid "Diese Erstattung ist bereits als gebucht gemeldet. Der Vorgang wurde abgeschlossen, es wurde nichts gesendet."
+msgstr "This refund is already reported as booked. The refund was closed, nothing was sent."
+
+#.
+msgid "Dieser Versuch wurde abgelehnt, es floss kein Geld. Bitte im aktuellen Formular neu auslösen."
+msgstr "This attempt was refused, no money moved. Please trigger it again in the current form."

@@ -31,6 +31,7 @@ class Client
     private const ENDPOINT_ORDERS = '/api/v1/shops/%d/orders?status=PROCESSING,REVOKING,REVOKED&acknowledged=false&pageNumber=0&pageSize=%d';
     private const ENDPOINT_ORDER = '/api/v1/shops/%d/orders/%s';
     private const ENDPOINT_ORDER_NUMBER = '/api/v1/shops/%d/orders/%s/merchant-order-number';
+    private const ENDPOINT_IMPORT_REPORT = '/api/v1/shops/%d/orders/%s/import-report';
     private const ENDPOINT_FULFILLMENT = '/api/v1/shops/%d/orders/%s/fulfillment';
     private const ENDPOINT_REVOCATION = '/api/v1/shops/%d/orders/%s/revocations';
     private const ENDPOINT_REFUNDS = '/api/v1/shops/%d/orders/%s/refunds';
@@ -39,6 +40,9 @@ class Client
     private const TOKEN_MARGIN = 60;
 
     private HttpTransport $http;
+
+    /** Refund calls wait for PayPal (the checkout up to 60 s): their own, longer timeout. */
+    private HttpTransport $refundHttp;
 
     private ?string $apiUrl;
 
@@ -58,8 +62,10 @@ class Client
         private string $shopSystemVersion = '',
         private string $pluginVersion = PluginInfo::VERSION,
         ?HttpTransport $transport = null,
+        ?HttpTransport $refundTransport = null,
     ) {
         $this->http = $transport ?? new CurlTransport();
+        $this->refundHttp = $refundTransport ?? $transport ?? new CurlTransport(10, 90);
         $this->apiUrl = $apiUrl !== '' ? $apiUrl : null;
     }
 
@@ -157,6 +163,26 @@ class Client
     }
 
     /**
+     * Tells everysize what the shop had for one position when the order was
+     * imported. Informational: the order stays as it is whatever happens.
+     *
+     * @param string|null $shopPrice current gross price, "109.95", null = unknown
+     * @param int|null    $stock     stock before the import, null = unknown or not limited
+     */
+    public function sendImportReport(string $everysizeOrderId, string $sku, ?string $shopPrice, ?int $stock): void
+    {
+        $response = $this->call(
+            'POST',
+            sprintf(self::ENDPOINT_IMPORT_REPORT, $this->getShopId(), rawurlencode($everysizeOrderId)),
+            ['sku' => $sku, 'shopPrice' => $shopPrice, 'stock' => $stock]
+        );
+
+        if ($response['status'] !== 204) {
+            throw $this->error(sprintf('Import report for %s', $everysizeOrderId), $response);
+        }
+    }
+
+    /**
      * Marks the order as shipped. everysize only stores carrier and tracking
      * code if both are given.
      */
@@ -177,7 +203,9 @@ class Client
     /**
      * Refunds the customer through everysize (PayPal, on the merchant's behalf).
      * The idempotency key makes a repeated request (double click, timeout and
-     * retry) refund only once.
+     * retry) refund only once; one key belongs to exactly one amount.
+     * Any 2xx is a booked refund. Anything else throws: a status of 0 or 5xx
+     * (ApiException::isUnclear()) means nobody knows whether the money moved.
      *
      * @param string|null $amount "10.00", null = everything not refunded yet
      *
@@ -185,15 +213,22 @@ class Client
      */
     public function refund(string $everysizeOrderId, ?string $amount, string $idempotencyKey): array
     {
+        // The token request is not the refund: when it fails, the POST never went out (R0 "before the POST").
+        try {
+            $this->authenticate();
+        } catch (ApiException $e) {
+            throw $e->asBeforePost();
+        }
         $body = $amount === null ? new \stdClass() : ['amount' => $amount];
         $response = $this->call(
             'POST',
             sprintf(self::ENDPOINT_REFUNDS, $this->getShopId(), rawurlencode($everysizeOrderId)),
             $body,
-            ['Idempotency-Key: ' . $idempotencyKey]
+            ['Idempotency-Key: ' . $idempotencyKey],
+            $this->refundHttp
         );
         $data = $this->decode($response['body']);
-        if ($response['status'] !== 201) {
+        if ($response['status'] < 200 || $response['status'] > 299) {
             throw $this->error(sprintf('Refund for %s', $everysizeOrderId), $response);
         }
 
@@ -205,13 +240,27 @@ class Client
      */
     public function getRefunds(string $everysizeOrderId): array
     {
-        $response = $this->call('GET', sprintf(self::ENDPOINT_REFUNDS, $this->getShopId(), rawurlencode($everysizeOrderId)));
+        $response = $this->call('GET', sprintf(self::ENDPOINT_REFUNDS, $this->getShopId(), rawurlencode($everysizeOrderId)), null, [], $this->refundHttp);
         $data = json_decode($response['body'], true);
-        if ($response['status'] !== 200 || !\is_array($data)) {
+        if ($response['status'] !== 200 || !\is_array($data) || !array_is_list($data)) {
             throw $this->error(sprintf('Refunds of %s', $everysizeOrderId), $response);
         }
+        // Only a real list counts as readable (A9): every entry has a refundId and a status, and an effective
+        // refund (COMPLETED, PENDING) has an amount that parses ("1,234.56" included).
+        foreach ($data as $entry) {
+            if (!\is_array($entry) || !\is_string($entry['refundId'] ?? null) || $entry['refundId'] === '' || !\is_string($entry['status'] ?? null)) {
+                throw new ApiException(sprintf('Refunds of %s failed: HTTP %d the list has an entry without refundId or status', $everysizeOrderId, $response['status']), $response['status']);
+            }
+            if (\in_array(strtoupper($entry['status']), ['COMPLETED', 'PENDING'], true)) {
+                try {
+                    Amount::parse($entry['amount'] ?? null, 'refund amount');
+                } catch (ApiException $e) {
+                    throw new ApiException(sprintf('Refunds of %s failed: HTTP %d %s', $everysizeOrderId, $response['status'], $e->getMessage()), $response['status']);
+                }
+            }
+        }
 
-        return array_values(array_filter($data, '\is_array'));
+        return $data;
     }
 
     public function sendRevocation(string $everysizeOrderId, string $sku, string $reason, string $comment = ''): void
@@ -251,7 +300,7 @@ class Client
      *
      * @return array{status: int, body: string}
      */
-    private function call(string $method, string $path, $payload = null, array $extraHeaders = []): array
+    private function call(string $method, string $path, $payload = null, array $extraHeaders = [], ?HttpTransport $transport = null): array
     {
         $this->authenticate();
 
@@ -262,7 +311,7 @@ class Client
             $headers[] = 'Content-Type: application/json';
         }
 
-        return $this->http->request($method, $this->getApiUrl() . $path, $this->headers($headers), $body);
+        return ($transport ?? $this->http)->request($method, $this->getApiUrl() . $path, $this->headers($headers), $body);
     }
 
     /**

@@ -99,14 +99,17 @@ class Settings implements Credentials
     }
 
     /**
-     * Switches auto-refund on or off. Turning it on (from off or from an
-     * empty state) anchors the since-timestamp at "now" if none is stored —
-     * otherwise the first run would treat every old declined order as due.
+     * Switches auto-refund on or off. Turning it on (off -> on, or without a
+     * date) anchors the since-timestamp at "now" - otherwise the first run
+     * would treat every old declined order as due.
      */
     public function setAutoRefundDecline(bool $on): void
     {
+        $was = $this->isAutoRefundDecline();
         $this->set(self::AUTO_REFUND_DECLINE, $on ? '1' : '0');
-        if ($on && $this->get(self::AUTO_REFUND_SINCE) === '') {
+        // Switching on (off -> on) anchors the start date at "now" - a cancellation counts only if it lies after it
+        // (A12). Also when there is no date yet.
+        if ($on && (!$was || $this->get(self::AUTO_REFUND_SINCE) === '')) {
             $this->set(self::AUTO_REFUND_SINCE, date('Y-m-d H:i:s'));
         }
     }

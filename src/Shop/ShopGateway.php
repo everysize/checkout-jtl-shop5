@@ -33,6 +33,13 @@ interface ShopGateway
     public function taxRateFor(int $taxClassId, string $countryIso): ?float;
 
     /**
+     * ISO code of the shop's default tax country (the merchant country the
+     * core uses for a customer without delivery address: STEUERSATZ_STANDARD_LAND,
+     * else the country of tfirma, else DE). Null if it cannot be determined for sure.
+     */
+    public function defaultTaxCountry(): ?string;
+
+    /**
      * Flushes the article cache tag of an article after a stock change
      * (CACHING_GROUP_ARTICLE_<id>).
      */

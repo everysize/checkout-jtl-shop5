@@ -34,6 +34,33 @@ class OrderLinks
     public const RESULT_SENT = 'sent';
     /** Not sent: the order was already revoked at everysize. */
     public const RESULT_SKIPPED = 'skipped';
+    /**
+     * Result of the open refund entry: the call was (or is about to be) sent and nobody knows its outcome.
+     * Stored with the idempotency key (SKU), the amount (REASON, "rest" = everything not refunded yet).
+     * Old reports with the result "unknown" are NOT open entries: display and automatic-refund block only.
+     */
+    public const RESULT_OPEN = 'open';
+    /** The refund of this form key was refused with proof: the key is burned, the next try needs a new one (R2). */
+    public const RESULT_REJECTED = 'rejected';
+    /** The merchant marked an open entry as cleared (nothing was sent); the automatic refund stays off. */
+    public const RESULT_CLEARED = 'cleared';
+    /** Amount stored for a refund of "the rest". */
+    public const AMOUNT_REST = 'rest';
+    /**
+     * Kind of the data row of the open entry. Deliberately NOT "refund": the success or refusal report often
+     * carries the same key as SKU, and the unique key (order, kind, SKU) would reject it.
+     */
+    public const KIND_REFUND_OPEN = 'refundopen';
+    /** Kind of the rows that hold the refundIds known when the entry was created (SKU = refundId). */
+    public const KIND_REFUND_KNOWN = 'refundknown';
+    /** Kind of the report that links a booked refund to the idempotency key (SKU = key, REASON = refundId). */
+    public const KIND_REFUND_KEY = 'refundkey';
+    /** Kind of the per-order lock row: exists exactly as long as an open refund entry does. */
+    public const KIND_REFUND_LOCK = 'refundlock';
+    /** Shipping report that failed (API down): the order was shipped, only everysize does not know yet. */
+    public const KIND_FULFILLMENT_FAILED = 'fulfillfail';
+    /** A refund entry is not touched by a second request within this many seconds (the first may still run). */
+    public const REFUND_MIN_AGE = 150;
     /** Not sent: everysize already had it (a tracking code reported before the plugin remembered codes). */
     public const RESULT_KNOWN = 'known';
 
@@ -156,6 +183,267 @@ class OrderLinks
             'result' => $result,
             'created_at' => date('Y-m-d H:i:s'),
         ]);
+    }
+
+    /**
+     * Removes a report, e.g. the open refund call once its outcome is known.
+     */
+    public function deleteReport(int $orderId, string $kind, string $sku): void
+    {
+        $this->db->execute(
+            'DELETE FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind AND sku = :sku',
+            ['id' => $orderId, 'kind' => $kind, 'sku' => $sku]
+        );
+    }
+
+    /**
+     * The open refund entry of the order, or null. Exactly one per order: the lock row (kind refundlock,
+     * unique per order) is its existence, the refund row (kind refund, result open) its data.
+     * "key" is empty for a lock without data (a crashed request) - only "mark as cleared" is left then.
+     *
+     * @return object{key: string, amount: string, created_at: string, sent_at: string, token: string}|null
+     */
+    public function openRefund(int $orderId): ?object
+    {
+        $lock = $this->db->getSingleObject(
+            'SELECT reason, created_at FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind',
+            ['id' => $orderId, 'kind' => self::KIND_REFUND_LOCK]
+        );
+        if ($lock === null) {
+            return null;
+        }
+        $data = $this->db->getSingleObject(
+            'SELECT sku, reason, created_at FROM xplugin_everysize_checkout_report
+             WHERE kBestellung = :id AND kind = :kind AND result = :result ORDER BY kReport LIMIT 1',
+            ['id' => $orderId, 'kind' => self::KIND_REFUND_OPEN, 'result' => self::RESULT_OPEN]
+        );
+
+        return (object) [
+            'key' => $data !== null ? (string) $data->sku : '',
+            'amount' => $data !== null ? (string) $data->reason : '',
+            'created_at' => $data !== null ? (string) $data->created_at : (string) $lock->created_at,
+            'sent_at' => (string) $lock->created_at,
+            'token' => (string) $lock->reason,
+        ];
+    }
+
+    /**
+     * Stores a new open refund entry BEFORE the call is sent. False (nothing may be sent) if another entry is
+     * open or a parallel request won the lock, or if storing fails. $amount null = the rest.
+     */
+    public function claimNewRefund(int $orderId, string $key, ?string $amount): bool
+    {
+        if ($this->openRefund($orderId) !== null) {
+            return false;
+        }
+        $token = bin2hex(random_bytes(8));
+        try {
+            $this->db->execute(
+                'INSERT IGNORE INTO xplugin_everysize_checkout_report (kBestellung, kind, sku, reason, result, created_at)
+                 VALUES (:id, :kind, :sku, :token, :result, :now)',
+                ['id' => $orderId, 'kind' => self::KIND_REFUND_LOCK, 'sku' => '', 'token' => $token, 'result' => 'lock', 'now' => date('Y-m-d H:i:s')]
+            );
+            $held = $this->db->getScalar(
+                'SELECT reason FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind',
+                ['id' => $orderId, 'kind' => self::KIND_REFUND_LOCK]
+            );
+            if ((string) $held !== $token) {
+                return false;
+            }
+            $this->db->insert('xplugin_everysize_checkout_report', [
+                'kBestellung' => $orderId,
+                'kind' => self::KIND_REFUND_OPEN,
+                'sku' => $key,
+                'reason' => $amount ?? self::AMOUNT_REST,
+                'result' => self::RESULT_OPEN,
+                'created_at' => date('Y-m-d H:i:s'),
+            ]);
+        } catch (\Throwable) {
+            $this->releaseLock($orderId, $token);
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Takes over an open entry for a repeated send: swaps the token and stamps the send time in one conditional
+     * UPDATE, so of two parallel requests only one gets true.
+     */
+    public function claimRetry(int $orderId, string $oldToken, string $oldSentAt): bool
+    {
+        $token = bin2hex(random_bytes(8));
+        try {
+            $this->db->execute(
+                'UPDATE xplugin_everysize_checkout_report SET reason = :new, created_at = :now
+                 WHERE kBestellung = :id AND kind = :kind AND reason = :old AND created_at = :oldsent',
+                ['new' => $token, 'now' => date('Y-m-d H:i:s'), 'id' => $orderId, 'kind' => self::KIND_REFUND_LOCK, 'old' => $oldToken, 'oldsent' => $oldSentAt]
+            );
+
+            return (string) $this->db->getScalar(
+                'SELECT reason FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind',
+                ['id' => $orderId, 'kind' => self::KIND_REFUND_LOCK]
+            ) === $token;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * "Mark as cleared": deletes the lock only with the matching token and a send time older than the cutoff - one
+     * conditional DELETE, so a request that still runs (or took the entry over) is never cleared by accident.
+     * True when the lock is gone afterwards.
+     */
+    public function claimClear(int $orderId, string $token, string $olderThan): bool
+    {
+        try {
+            $this->db->execute(
+                'DELETE FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind AND reason = :token AND created_at <= :cutoff',
+                ['id' => $orderId, 'kind' => self::KIND_REFUND_LOCK, 'token' => $token, 'cutoff' => $olderThan]
+            );
+
+            return $this->db->getScalar(
+                'SELECT 1 FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind',
+                ['id' => $orderId, 'kind' => self::KIND_REFUND_LOCK]
+            ) === null;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * Stores the refundIds the list held when the entry was created (A3/A4): only a refund that is NOT among
+     * them can be the one this entry sent.
+     *
+     * @param string[] $ids
+     */
+    public function saveKnownRefunds(int $orderId, array $ids): void
+    {
+        foreach (array_unique($ids) as $id) {
+            $this->db->execute(
+                'INSERT IGNORE INTO xplugin_everysize_checkout_report (kBestellung, kind, sku, reason, result, created_at)
+                 VALUES (:id, :kind, :sku, :reason, :result, :now)',
+                ['id' => $orderId, 'kind' => self::KIND_REFUND_KNOWN, 'sku' => $id, 'reason' => '', 'result' => 'known', 'now' => date('Y-m-d H:i:s')]
+            );
+        }
+    }
+
+    /** @return string[] */
+    public function knownRefundIds(int $orderId): array
+    {
+        return array_map(
+            static fn (object $row): string => (string) $row->sku,
+            $this->db->getObjects(
+                'SELECT sku FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind',
+                ['id' => $orderId, 'kind' => self::KIND_REFUND_KNOWN]
+            )
+        );
+    }
+
+    /** Closes the open entry (after the outcome report was written): refund row first, then the lock. */
+    public function closeRefund(int $orderId): void
+    {
+        $this->db->execute(
+            'DELETE FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind AND result = :result',
+            ['id' => $orderId, 'kind' => self::KIND_REFUND_OPEN, 'result' => self::RESULT_OPEN]
+        );
+        $this->db->execute(
+            'DELETE FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind',
+            ['id' => $orderId, 'kind' => self::KIND_REFUND_KNOWN]
+        );
+        $this->db->execute(
+            'DELETE FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind',
+            ['id' => $orderId, 'kind' => self::KIND_REFUND_LOCK]
+        );
+    }
+
+    /** Removes the data of an entry whose lock is already gone (after claimClear). */
+    public function dropEntryData(int $orderId): void
+    {
+        foreach ([self::KIND_REFUND_OPEN, self::KIND_REFUND_KNOWN] as $kind) {
+            $this->db->execute(
+                'DELETE FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind',
+                ['id' => $orderId, 'kind' => $kind]
+            );
+        }
+    }
+
+    /** The refund of this idempotency key was reported as booked (kind refundkey). */
+    public function hasKeyReport(int $orderId, string $key): bool
+    {
+        return $this->db->getScalar(
+            'SELECT 1 FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind AND sku = :sku',
+            ['id' => $orderId, 'kind' => self::KIND_REFUND_KEY, 'sku' => $key]
+        ) !== null;
+    }
+
+    private function releaseLock(int $orderId, string $token): void
+    {
+        try {
+            $this->db->execute(
+                'DELETE FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind AND reason = :token',
+                ['id' => $orderId, 'kind' => self::KIND_REFUND_LOCK, 'token' => $token]
+            );
+        } catch (\Throwable) {
+            // stays; the entry then only offers "mark as cleared"
+        }
+    }
+
+    /**
+     * Orders with an open refund entry, oldest first (automatic runs resolve their own and report old ones).
+     *
+     * @return array<int, object{kBestellung: int, everysize_order_id: string, cBestellNr: string}>
+     */
+    public function getOpenRefundOrders(): array
+    {
+        return $this->db->getObjects(
+            "SELECT b.kBestellung, l.everysize_order_id, b.cBestellNr
+             FROM xplugin_everysize_checkout_report k
+             JOIN xplugin_everysize_checkout_order l ON l.kBestellung = k.kBestellung
+             JOIN tbestellung b ON b.kBestellung = k.kBestellung
+             WHERE k.kind = :kind ORDER BY k.created_at",
+            ['kind' => self::KIND_REFUND_LOCK]
+        );
+    }
+
+    /** A shipping report failed for this order (kept as proof of shipping). */
+    public function markFulfillmentFailed(int $orderId): void
+    {
+        if ($this->hasFailedFulfillment($orderId)) {
+            return;
+        }
+        $this->addReport($orderId, self::KIND_FULFILLMENT_FAILED, '', '', 'failed');
+    }
+
+    /** Any fulfillment report (sent, skipped): the shipping report is done, nothing is left to make up. */
+    public function hasFulfillmentReport(int $orderId): bool
+    {
+        return $this->db->getScalar(
+            'SELECT 1 FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind',
+            ['id' => $orderId, 'kind' => self::KIND_FULFILLMENT]
+        ) !== null;
+    }
+
+    public function hasFailedFulfillment(int $orderId): bool
+    {
+        return $this->db->getScalar(
+            'SELECT 1 FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind',
+            ['id' => $orderId, 'kind' => self::KIND_FULFILLMENT_FAILED]
+        ) !== null;
+    }
+
+    /**
+     * A tracking code entered on the order page counts as shipping, like in
+     * the order page ("gilt als Versand"): the goods may be on their way
+     * although the Wawi never booked them.
+     */
+    public function hasManualTracking(int $orderId): bool
+    {
+        return $this->db->getScalar(
+            "SELECT 1 FROM xplugin_everysize_checkout_tracking WHERE kBestellung = :id AND TRIM(tracking_code) <> ''",
+            ['id' => $orderId]
+        ) !== null;
     }
 
     public function hasSentFulfillment(int $orderId): bool
@@ -297,9 +585,8 @@ class OrderLinks
              LEFT JOIN xplugin_everysize_checkout_tracking t ON t.kBestellung = l.kBestellung
              WHERE (b.cStatus IN (:versandt, :teilversandt)
                     OR b.dVersandDatum IS NOT NULL
-                    OR EXISTS (SELECT 1 FROM tlieferschein dl3
-                               JOIN tversand v3 ON v3.kLieferschein = dl3.kLieferschein
-                               WHERE dl3.kInetBestellung = b.kBestellung))
+                    OR TRIM(COALESCE(t.tracking_code, '')) <> ''
+                    OR EXISTS (SELECT 1 FROM tlieferschein dl3 WHERE dl3.kInetBestellung = b.kBestellung))
                AND EXISTS (SELECT 1 FROM xplugin_everysize_checkout_item i WHERE i.kBestellung = l.kBestellung)
                AND NOT EXISTS (SELECT 1 FROM xplugin_everysize_checkout_report r
                                WHERE r.kBestellung = l.kBestellung AND r.kind = :kind)
@@ -370,9 +657,10 @@ class OrderLinks
      * that have no automatic refund yet — neither done nor given up. An
      * everysize order has one product; a position the merchant or the Wawi
      * added keeps the order from being refunded in full. Orders with a
-     * delivery note plus shipping (shipped before the cancellation was seen)
-     * or a non-cancelled status are excluded: shipped goods are a RETOUR
-     * case, and a cancellation taken back by the Wawi is not refunded.
+     * delivery note plus shipping (shipped before the cancellation was seen),
+     * a shipping date, a tracking code (Wawi or entered by hand) or a reported
+     * fulfillment, or a non-cancelled status are excluded: shipped goods are
+     * a RETOUR case, and a cancellation taken back by the Wawi is not refunded.
      *
      * @return array<int, object{kBestellung: int, everysize_order_id: string, cBestellNr: string}>
      */
@@ -388,10 +676,15 @@ class OrderLinks
                AND r.kind = :revocation AND r.reason = :decline AND r.result = :sent
                AND r.created_at >= :since
                AND b.dVersandDatum IS NULL
+               AND TRIM(COALESCE(b.cTracking, '')) = ''
+               AND NOT EXISTS (SELECT 1 FROM tlieferschein dl WHERE dl.kInetBestellung = b.kBestellung)
                AND NOT EXISTS (
-                   SELECT 1 FROM tlieferschein dl
-                   JOIN tversand v ON v.kLieferschein = dl.kLieferschein
-                   WHERE dl.kInetBestellung = b.kBestellung
+                   SELECT 1 FROM xplugin_everysize_checkout_tracking t
+                   WHERE t.kBestellung = b.kBestellung AND TRIM(t.tracking_code) <> ''
+               )
+               AND NOT EXISTS (
+                   SELECT 1 FROM xplugin_everysize_checkout_report f
+                   WHERE f.kBestellung = b.kBestellung AND f.kind IN (:fulfillment, :fulfillfail)
                )
                AND NOT EXISTS (
                    SELECT 1 FROM twarenkorbpos p
@@ -411,6 +704,41 @@ class OrderLinks
                 'sent' => self::RESULT_SENT,
                 'since' => $since,
                 'refund' => self::KIND_REFUND,
+                'fulfillment' => self::KIND_FULFILLMENT,
+                'fulfillfail' => self::KIND_FULFILLMENT_FAILED,
+            ]
+        );
+    }
+
+    /**
+     * Cancellations before shipping (MERCHANT_DECLINE reported since $since) that have no refund report and no open
+     * entry yet - whether or not they are automatic-refund candidates. The exporter subtracts the candidates and
+     * tells the merchant, once, about the others (A13).
+     *
+     * @return array<int, object{kBestellung: int, everysize_order_id: string, cBestellNr: string}>
+     */
+    public function getCancelledDeclines(string $since): array
+    {
+        return $this->db->getObjects(
+            "SELECT DISTINCT b.kBestellung, l.everysize_order_id, b.cBestellNr
+             FROM xplugin_everysize_checkout_report r
+             JOIN tbestellung b ON b.kBestellung = r.kBestellung
+             JOIN xplugin_everysize_checkout_order l ON l.kBestellung = r.kBestellung
+             WHERE l.paypal_capture_id <> ''
+               AND b.cStatus = :storno
+               AND r.kind = :revocation AND r.reason = :decline AND r.result = :sent
+               AND r.created_at >= :since
+               AND NOT EXISTS (SELECT 1 FROM xplugin_everysize_checkout_report a WHERE a.kBestellung = r.kBestellung AND a.kind = :refund)
+               AND NOT EXISTS (SELECT 1 FROM xplugin_everysize_checkout_report k WHERE k.kBestellung = r.kBestellung AND k.kind = :lock)
+             ORDER BY b.cBestellNr",
+            [
+                'storno' => self::STATUS_STORNO,
+                'revocation' => self::KIND_REVOCATION,
+                'decline' => Api\Client::REASON_MERCHANT_DECLINE,
+                'sent' => self::RESULT_SENT,
+                'since' => $since,
+                'refund' => self::KIND_REFUND,
+                'lock' => self::KIND_REFUND_LOCK,
             ]
         );
     }
@@ -423,8 +751,9 @@ class OrderLinks
      * shipped marks orders that were shipped before the cancellation reached
      * the shop (a delivery note with shipping, or the JTL shipping date —
      * cStatus is overwritten by the cancellation, so those are the lasting
-     * proofs): they are reported as RETOUR, not MERCHANT_DECLINE, and are
-     * not refunded automatically.
+     * proofs) or that carry a tracking code, also one entered by hand: they
+     * are reported as RETOUR, not MERCHANT_DECLINE, and are not refunded
+     * automatically.
      *
      * @return array<int, object{ORDERID: int, everysize_order_id: string, cBestellNr: string, sku: string, shipped: int}>
      */
@@ -432,10 +761,13 @@ class OrderLinks
     {
         return $this->db->getObjects(
             "SELECT o.kBestellung AS ORDERID, l.everysize_order_id, o.cBestellNr, i.sku,
-                    (EXISTS (SELECT 1 FROM tlieferschein dl
-                             JOIN tversand v ON v.kLieferschein = dl.kLieferschein
-                             WHERE dl.kInetBestellung = o.kBestellung)
-                     OR o.dVersandDatum IS NOT NULL) AS shipped
+                    (EXISTS (SELECT 1 FROM tlieferschein dl WHERE dl.kInetBestellung = o.kBestellung)
+                     OR o.dVersandDatum IS NOT NULL
+                     OR EXISTS (SELECT 1 FROM xplugin_everysize_checkout_report ff
+                                WHERE ff.kBestellung = o.kBestellung AND ff.kind = :fulfillfail)
+                     OR TRIM(COALESCE(o.cTracking, '')) <> ''
+                     OR EXISTS (SELECT 1 FROM xplugin_everysize_checkout_tracking mt
+                                WHERE mt.kBestellung = o.kBestellung AND TRIM(mt.tracking_code) <> '')) AS shipped
              FROM xplugin_everysize_checkout_item i
              JOIN tbestellung o ON o.kBestellung = i.kBestellung
              JOIN xplugin_everysize_checkout_order l ON l.kBestellung = o.kBestellung
@@ -445,7 +777,7 @@ class OrderLinks
                    WHERE r.kBestellung = o.kBestellung AND r.kind = :kind AND r.sku = i.sku
                )
              ORDER BY o.cBestellNr",
-            ['storno' => self::STATUS_STORNO, 'kind' => self::KIND_REVOCATION]
+            ['storno' => self::STATUS_STORNO, 'kind' => self::KIND_REVOCATION, 'fulfillfail' => self::KIND_FULFILLMENT_FAILED]
         );
     }
 }

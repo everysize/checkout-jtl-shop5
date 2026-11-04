@@ -24,12 +24,16 @@ if (!\defined('PFAD_ROOT')) {
 
 use JTL\Helpers\Form;
 use JTL\Shop;
+use Plugin\everysize_checkout\Api\Amount;
 use Plugin\everysize_checkout\Api\ApiException;
 use Plugin\everysize_checkout\Api\Client;
 use Plugin\everysize_checkout\Db\JtlConnection;
+use Plugin\everysize_checkout\ManualRefund;
 use Plugin\everysize_checkout\OrderLinks;
 use Plugin\everysize_checkout\PluginInfo;
+use Plugin\everysize_checkout\Protocol;
 use Plugin\everysize_checkout\RefundAmount;
+use Plugin\everysize_checkout\RefundBalance;
 use Plugin\everysize_checkout\Sync;
 
 require_once __DIR__ . '/../src/autoload.php';
@@ -63,6 +67,47 @@ $redirect = static function (array $params = []) use ($pluginId): never {
     header('Location: ' . $url);
 
     exit;
+};
+
+$euroText = static fn (string $value): string => number_format((float) $value, 2, ',', '.') . ' €';
+
+/**
+ * Meldungstext zum Ergebnis eines Erstattungsaufrufs (ManualRefund). Nie "abgelehnt" oder "kein Geld geflossen",
+ * außer bei sicherer Ablehnung (R0); nie "Wiederholen ist sicher".
+ *
+ * @param array<string, mixed> $o
+ */
+$refundMessage = static function (array $o) use ($t, $euroText): string {
+    $amount = $o['amount'] !== '' ? $euroText((string) $o['amount']) : $t('den Rest');
+    $open = $o['open'] ?? null;
+    $openAmount = $open !== null && $open->amount !== '' && $open->amount !== OrderLinks::AMOUNT_REST ? $euroText($open->amount) : $t('den Rest');
+
+    return match ($o['outcome']) {
+        ManualRefund::OTHER_AMOUNT => sprintf($t('Erstattung: Ein früherer Aufruf über %s hat kein klares Ergebnis. Solange er offen ist, wird nichts anderes erstattet. Bitte ihn zuerst prüfen (PayPal), wiederholen oder als geklärt markieren.'), $openAmount),
+        ManualRefund::OPEN_EXISTS => sprintf($t('Erstattung: Ein früherer Aufruf über %s hat kein klares Ergebnis. Es wird nichts Weiteres gesendet. Bitte ihn zuerst prüfen (PayPal), wiederholen oder als geklärt markieren.'), $openAmount),
+        ManualRefund::TOO_HIGH => sprintf($t('Erstattung: Es sind nur noch %s offen. Bitte höchstens diesen Betrag erstatten.'), $euroText(number_format($o['openCents'] / 100, 2, '.', ''))),
+        ManualRefund::STALE => $t('Erstattung nicht gesendet: Die Erstattungen haben sich seit dem Laden der Seite geändert. Bitte neu laden.'),
+        ManualRefund::LIST_UNREADABLE => $t('Erstattung nicht gesendet: Die Erstattungen bei everysize sind gerade nicht lesbar. Bitte später erneut versuchen.'),
+        ManualRefund::DUPLICATE => $t('Erstattung wurde bereits ausgelöst (gleicher Vorgang).'),
+        ManualRefund::KEY_REJECTED => $t('Dieser Versuch wurde abgelehnt, es floss kein Geld. Bitte im aktuellen Formular neu auslösen.'),
+        ManualRefund::BUSY => $t('Erstattung nicht gesendet: Für diese Bestellung läuft gerade ein anderer Erstattungsaufruf. Bitte später prüfen.'),
+        ManualRefund::YOUNG => sprintf($t('Der Erstattungsaufruf läuft möglicherweise noch. Bitte in %d Sekunden erneut prüfen.'), (int) $o['wait']),
+        ManualRefund::NOT_OPEN => $t('Es gibt keinen offenen Erstattungsvorgang.'),
+        ManualRefund::ORPHAN => $t('Der offene Vorgang ist unvollständig. Bitte in PayPal prüfen und als geklärt markieren.'),
+        ManualRefund::BEFORE_POST => $t('Erstattung nicht gesendet: Die Anmeldung bei everysize ist gescheitert, es ist nichts passiert. ') . $o['message'],
+        ManualRefund::UNCLEAR => sprintf(
+            $t('Erstattung über %s: Ergebnis unklar. Das Geld kann geflossen sein. Bitte in PayPal prüfen; erst danach wiederholen oder als geklärt markieren. (%s)'),
+            $amount,
+            $o['message']
+        ),
+        ManualRefund::REJECTED => $t('Erstattung abgelehnt, es ist kein Geld geflossen: ') . $o['message'],
+        ManualRefund::REJECTED_REPEAT => $t('Die Wiederholung wurde vom Checkout abgelehnt, der Vorgang bleibt offen. Bitte in PayPal prüfen und ihn als geklärt markieren. ') . $o['message'],
+        ManualRefund::ALREADY_REPORTED => $t('Diese Erstattung ist bereits als gebucht gemeldet. Der Vorgang wurde abgeschlossen, es wurde nichts gesendet.'),
+        ManualRefund::ADOPTED => sprintf($t('Die Erstattung ist bei PayPal bereits gebucht (%s). Sie wurde übernommen, es wurde nichts gesendet.'), $o['refundId']),
+        ManualRefund::CLEARED => $t('Der offene Vorgang wurde als geklärt markiert. Es wurde nichts gesendet; die automatische Erstattung bleibt für diese Bestellung aus.'),
+        ManualRefund::ALREADY_REFUNDED => $t('Diese Bestellung ist bereits vollständig erstattet.'),
+        default => sprintf($t('Erstattung über %s an everysize gemeldet (Status %s).'), $amount, $o['status'] !== '' ? $o['status'] : $t('offen')),
+    } . (($o['warning'] ?? '') !== '' ? ' ' . $o['warning'] : '');
 };
 
 $action = (string) ($_POST['everysize_orders_action'] ?? '');
@@ -162,33 +207,26 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $action !== '') {
             if (!preg_match('/^[A-Za-z0-9_-]{16,64}$/', $key)) {
                 $redirect(['msg' => $t('Erstattung: Formular-Schlüssel ungültig — Seite neu laden und erneut senden.'), 'kBestellung' => $orderId]);
             }
-            if (in_array($key, array_column($links->getReports($orderId), 'sku'), true)) {
-                $redirect(['msg' => $t('Erstattung wurde bereits ausgelöst (gleicher Vorgang).'), 'kBestellung' => $orderId]);
+            // Alles Weitere steht in ManualRefund (R0/R1): Eintrag vor dem Senden speichern, nur sicher
+            // abgelehnt ist endgültig, offener Eintrag sperrt jede andere Erstattung.
+            $paid = (float) ($db->getScalar('SELECT fGesamtsumme FROM tbestellung WHERE kBestellung = :id', ['id' => $orderId]) ?? 0);
+            $seenPost = $_POST['everysize_seen_refunded'] ?? null;
+            $seen = is_string($seenPost) && ctype_digit($seenPost) ? (int) $seenPost : null;
+            if ($seen === null) {
+                // Ohne die beim Seitenaufruf bekannte Erstattungssumme (veralteter Tab) wird nicht gesendet.
+                $redirect(['msg' => $t('Erstattung: Seite neu laden und erneut senden.'), 'kBestellung' => $orderId]);
             }
-            $client = Sync::createClient(Shop::Container()->getDB(), $pluginId);
-            try {
-                $refund = $client->refund($everysizeOrderId, $amount, $key);
-            } catch (ApiException $e) {
-                $redirect(['msg' => $t('Erstattung fehlgeschlagen: ') . $e->getMessage(), 'kBestellung' => $orderId]);
-            }
-            $status = strtoupper((string) ($refund['status'] ?? ''));
-            // everysize answers a capture that is refunded completely already
-            // with 201 and this status, no refund ID (like JTL does).
-            if ($status === 'ALREADY_REFUNDED') {
-                $redirect(['msg' => $t('Diese Bestellung ist bereits vollständig erstattet.'), 'kBestellung' => $orderId]);
-            }
-            $refundId = (string) ($refund['refundId'] ?? '');
-            $reference = $refundId !== '' ? $refundId : $key;
-            // The same idempotency key again (form sent twice) returns the
-            // same refund: record and announce it once (like JTL does).
-            if (in_array($reference, array_column($links->getReports($orderId), 'sku'), true)) {
-                $redirect(['msg' => $t('Erstattung wurde bereits gemeldet (gleicher Vorgang).'), 'kBestellung' => $orderId]);
-            }
-            $links->addReport($orderId, OrderLinks::KIND_REFUND, $reference, (string) $amount, OrderLinks::RESULT_SENT);
-            $redirect([
-                'msg' => sprintf($t('Erstattung über %s an everysize gemeldet (Status %s).'), number_format((float) $amount, 2, ',', '.') . ' €', $status !== '' ? $status : $t('offen')),
-                'kBestellung' => $orderId,
-            ]);
+            $outcome = (new ManualRefund($links, Sync::createRefundClient(Shop::Container()->getDB(), $pluginId), new Protocol($db)))
+                ->submit($orderId, $everysizeOrderId, $paid, $amount, $key, $seen);
+            $redirect(['msg' => $refundMessage($outcome), 'kBestellung' => $orderId]);
+
+            // no default
+
+        case 'refund_retry':
+        case 'refund_clear':
+            $service = new ManualRefund($links, Sync::createRefundClient(Shop::Container()->getDB(), $pluginId), new Protocol($db));
+            $outcome = $action === 'refund_retry' ? $service->retry($orderId, $everysizeOrderId) : $service->clear($orderId);
+            $redirect(['msg' => $refundMessage($outcome), 'kBestellung' => $orderId]);
 
             // no default
 
@@ -292,7 +330,7 @@ foreach ($db->getObjects(
 $reportsByOrder = [];
 foreach ($db->getObjects(
     "SELECT kBestellung, kind, sku, reason, result, created_at FROM xplugin_everysize_checkout_report
-     WHERE kBestellung IN ($idsSql) ORDER BY kReport"
+     WHERE kBestellung IN ($idsSql) AND kind NOT IN ('refundlock', 'refundknown', 'refundkey') ORDER BY kReport"
 ) as $row) {
     $reportsByOrder[(int) $row->kBestellung][] = $row;
 }
@@ -337,9 +375,14 @@ if ($selected > 0 && (string) $links->getLink($selected)->paypal_capture_id !== 
     try {
         $refunds = [];
         $refunded = 0.0;
-        foreach (Sync::createClient(Shop::Container()->getDB(), $pluginId)
-            ->getRefunds((string) $selectedLink->everysize_order_id) as $refund) {
-            $amount = (float) str_replace(',', '', (string) ($refund['amount'] ?? '0'));
+        $rawRefunds = Sync::createClient(Shop::Container()->getDB(), $pluginId)
+            ->getRefunds((string) $selectedLink->everysize_order_id);
+        foreach ($rawRefunds as $refund) {
+            try {
+                $amount = Amount::parse($refund['amount'] ?? null, 'refund amount');
+            } catch (ApiException) {
+                $amount = 0.0; // only FAILED/CANCELLED entries may lack an amount (the list is validated)
+            }
             $status = strtoupper((string) ($refund['status'] ?? ''));
             if (in_array($status, ['COMPLETED', 'PENDING'], true)) {
                 $refunded += $amount;
@@ -358,6 +401,8 @@ if ($selected > 0 && (string) $links->getLink($selected)->paypal_capture_id !== 
             'refunded' => $refunded,
             'open' => max(0.0, round($paid - $refunded, 2)),
             'currency' => $currency,
+            // R3: the sum the page knows; the form sends it back, a difference means a stale tab
+            'seenCents' => RefundBalance::refundedCents($rawRefunds),
         ];
     } catch (ApiException $e) {
         $refundInfo = ['error' => $e->getMessage()];
@@ -398,11 +443,11 @@ $reportRow = static function (object $report, string $currency) use ($t, $money)
         OrderLinks::KIND_FULFILLMENT => $t('Versand'),
         OrderLinks::KIND_TRACKING => $t('Sendungsnummer'),
         OrderLinks::KIND_REVOCATION => $reason === Client::REASON_RETOUR ? $t('Retoure') : $t('Storno'),
-        OrderLinks::KIND_REFUND => $sku === OrderLinks::AUTO_REFUND ? $t('Automatische Erstattung') : $t('Erstattung'),
+        OrderLinks::KIND_REFUND, OrderLinks::KIND_REFUND_OPEN => $sku === OrderLinks::AUTO_REFUND ? $t('Automatische Erstattung') : $t('Erstattung'),
         default => $kind,
     };
     // subject = Artikel/Sendungsnummer/Erstattung; detail = Grund/Betrag.
-    if ($kind === OrderLinks::KIND_REFUND) {
+    if ($kind === OrderLinks::KIND_REFUND || $kind === OrderLinks::KIND_REFUND_OPEN) {
         if ($sku === OrderLinks::AUTO_REFUND && $result === OrderLinks::RESULT_SENT) {
             // automatic refund: reason holds the refund ID, the amount is the full remainder
             $subject = $reason !== '' ? $reason : '–';
@@ -429,6 +474,10 @@ $reportRow = static function (object $report, string $currency) use ($t, $money)
         OrderLinks::RESULT_SENT => $t('gemeldet'),
         OrderLinks::RESULT_SKIPPED => $t('übersprungen'),
         OrderLinks::RESULT_KNOWN => $t('bekannt'),
+        OrderLinks::RESULT_OPEN => $t('Ergebnis unklar'),
+        OrderLinks::RESULT_CLEARED => $t('als geklärt markiert'),
+        OrderLinks::RESULT_REJECTED => $t('abgelehnt'),
+        'unknown' => $t('Ergebnis unbekannt'),
         '' => '–',
         default => $result,
     };
@@ -574,6 +623,44 @@ $e = static fn ($value): string => htmlspecialchars((string) $value, ENT_QUOTES)
                                 <?php if ((string) $order->paypal_capture_id === '') : ?>
                                     <p class="small text-muted mb-2"><?= $t('Keine PayPal-Capture-ID — diese Bestellung kann nicht über everysize erstattet werden.') ?></p>
                                 <?php else : ?>
+                                    <?php
+                                    // Offener Vorgang (R1): Betrag, Zeitpunkt, Wiederholen und "als geklärt markieren".
+                                    // Die Warnung steht auch, wenn die Erstattungsliste gerade nicht lädt.
+                                    $openRefund = $links->openRefund($id);
+                                    $amountPrefill = ($refundInfo['open'] ?? 0) > 0 ? number_format($refundInfo['open'], 2, ',', '.') : '';
+                                    $openAge = $openRefund !== null ? time() - (int) strtotime($openRefund->sent_at) : 0;
+                                    ?>
+                                    <?php if ($openRefund !== null) : ?>
+                                        <div class="alert alert-warning small py-2" style="max-width: 48rem">
+                                            <strong><?= $t('Ergebnis unklar — das Geld kann geflossen sein.') ?></strong>
+                                            <?= $e(sprintf(
+                                                $t('Ein Erstattungsaufruf über %s (Beginn %s, zuletzt gesendet %s) hat keine klare Antwort bekommen. Solange er offen ist, wird nichts anderes erstattet, auch nicht automatisch. Bitte zuerst in PayPal prüfen.'),
+                                                $openRefund->amount === OrderLinks::AMOUNT_REST ? $t('den Rest') : number_format((float) $openRefund->amount, 2, ',', '.') . ' €',
+                                                $openRefund->created_at,
+                                                $openRefund->sent_at
+                                            )) ?>
+                                            <?php if ($openAge < OrderLinks::REFUND_MIN_AGE) : ?>
+                                                <?= $e(sprintf($t('Der Aufruf läuft möglicherweise noch — bitte in %d Sekunden erneut prüfen.'), OrderLinks::REFUND_MIN_AGE - $openAge)) ?>
+                                            <?php else : ?>
+                                                <div class="mt-2 d-flex flex-wrap">
+                                                    <?php if ($openRefund->key !== '') : ?>
+                                                        <form method="post" action="" class="mr-2" onsubmit="return confirm(<?= $e(json_encode($t('Wiederholen: Es wird zuerst die PayPal-Liste gelesen. Steht die Erstattung dort nicht, wird der Betrag jetzt gesendet. Ging die erste Anfrage nicht durch, wird er jetzt ausgezahlt. Fortfahren?'), \JSON_UNESCAPED_UNICODE)) ?>)">
+                                                            <input type="hidden" name="jtl_token" value="<?= $e($token) ?>">
+                                                            <input type="hidden" name="everysize_orders_action" value="refund_retry">
+                                                            <input type="hidden" name="kBestellung" value="<?= $id ?>">
+                                                            <button type="submit" class="btn btn-sm btn-outline-primary"><?= $t('Wiederholen') ?></button>
+                                                        </form>
+                                                    <?php endif; ?>
+                                                    <form method="post" action="" onsubmit="return confirm(<?= $e(json_encode($t('Als geklärt markieren: Es wird nichts gesendet. Der Vorgang wird beendet, die automatische Erstattung bleibt für diese Bestellung aus. Fortfahren?'), \JSON_UNESCAPED_UNICODE)) ?>)">
+                                                        <input type="hidden" name="jtl_token" value="<?= $e($token) ?>">
+                                                        <input type="hidden" name="everysize_orders_action" value="refund_clear">
+                                                        <input type="hidden" name="kBestellung" value="<?= $id ?>">
+                                                        <button type="submit" class="btn btn-sm btn-outline-secondary"><?= $t('Als geklärt markieren') ?></button>
+                                                    </form>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endif; ?>
                                     <?php if ($refundInfo === null || ($refundInfo['error'] ?? '') !== '') : ?>
                                         <div class="alert alert-light border small py-2">
                                             <?= $refundInfo !== null
@@ -615,18 +702,21 @@ $e = static fn ($value): string => htmlspecialchars((string) $value, ENT_QUOTES)
                                         <?php else : ?>
                                             <p class="small text-muted mb-2"><?= $t('Noch keine Erstattungen.') ?></p>
                                         <?php endif; ?>
-                                        <form method="post" action="" class="form-inline" onsubmit="return confirm('<?= $t('Erstattung über everysize (PayPal) auslösen?') ?>')">
+                                        <?php if ($openRefund === null) : ?>
+                                        <form method="post" action="" class="form-inline" onsubmit="return confirm(<?= $e(json_encode($t('Erstattung über everysize (PayPal) auslösen?') . ' ', \JSON_UNESCAPED_UNICODE)) ?> + this.elements['amount'].value + ' €')">
                                             <input type="hidden" name="jtl_token" value="<?= $e($token) ?>">
                                             <input type="hidden" name="everysize_orders_action" value="refund">
                                             <input type="hidden" name="kBestellung" value="<?= $id ?>">
                                             <input type="hidden" name="everysize_refund_key" value="<?= $e(bin2hex(random_bytes(16))) ?>">
+                                            <input type="hidden" name="everysize_seen_refunded" value="<?= (int) $ri['seenCents'] ?>">
                                             <div class="form-group mb-1">
                                                 <label class="small mb-0 mr-2" for="amount-<?= $id ?>"><?= $t('Betrag') ?></label>
-                                                <input type="text" id="amount-<?= $id ?>" name="amount" class="form-control form-control-sm" value="<?= $ri['open'] > 0 ? $e(number_format($ri['open'], 2, ',', '.')) : '' ?>" placeholder="<?= $ri['open'] > 0 ? $e($t('Betrag in Euro')) : '' ?>">
+                                                <input type="text" id="amount-<?= $id ?>" name="amount" class="form-control form-control-sm" value="<?= $e($amountPrefill) ?>" placeholder="<?= $ri['open'] > 0 ? $e($t('Betrag in Euro')) : '' ?>" required>
                                             </div>
                                             <button type="submit" class="btn btn-sm btn-primary mb-1 ml-2" <?= $ri['open'] > 0 ? '' : 'disabled' ?>><?= $t('Erstatten') ?></button>
                                         </form>
-                                        <p class="small text-muted mb-2 mt-1"><?= $t('Die Erstattung läuft über everysize (PayPal) — Gutschriften in JTL-Wawi bewegen kein Geld. Der Restbetrag ist vorbelegt. Ein Storno vor dem Versand ohne bisherige Erstattung wird automatisch voll erstattet (Einstellung „Automatische Erstattung“).') ?></p>
+                                        <?php endif; ?>
+                                        <p class="small text-muted mb-2 mt-1"><?= $t('Die Erstattung läuft über everysize (PayPal) — Gutschriften in JTL-Wawi bewegen kein Geld. Der Restbetrag ist vorbelegt. Ein Storno vor dem Versand ohne bisherige Erstattung wird automatisch voll erstattet (Einstellung „Automatische Erstattung“) – nur wenn nachweislich nichts versendet wurde und die Bestellung bei everysize nicht schon widerrufen ist; sonst steht ein Hinweis im Protokoll.') ?></p>
                                     <?php endif; ?>
                                 <?php endif; ?>
 

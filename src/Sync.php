@@ -11,6 +11,7 @@ use Plugin\everysize_checkout\Api\CurlTransport;
 use Plugin\everysize_checkout\Db\JtlConnection;
 use Plugin\everysize_checkout\Export\StatusExporter;
 use Plugin\everysize_checkout\Import\ImportException;
+use Plugin\everysize_checkout\Import\ImportReport;
 use Plugin\everysize_checkout\Import\OrderImporter;
 use Plugin\everysize_checkout\Shop\JtlShopGateway;
 
@@ -54,7 +55,8 @@ final class Sync
     /**
      * Builds only the API client, for the admin actions (retour, refund)
      * that do not need a full sync. The admin answers the browser, so the
-     * timeouts are short (3 s connect / 5 s total); the sync keeps 10/30.
+     * timeouts are short (3 s connect / 5 s total); the sync keeps 10/30. Refunds
+     * have their own client (createRefundClient).
      */
     public static function createClient(DbInterface $db, int $pluginId): Client
     {
@@ -71,6 +73,25 @@ final class Sync
     }
 
     /**
+     * The client for refunds from the admin: connect 10 s, 90 s in total. The
+     * checkout waits up to 60 s for PayPal; a shorter timeout would turn a
+     * refund that went through into a seeming failure.
+     */
+    public static function createRefundClient(DbInterface $db, int $pluginId): Client
+    {
+        $settings = new Settings(new JtlConnection($db), 0);
+
+        return new Client(
+            $settings->getClientId(),
+            $settings->getClientSecret(),
+            '',
+            \defined('APPLICATION_VERSION') ? APPLICATION_VERSION : 'unknown',
+            PluginInfo::VERSION,
+            new CurlTransport(10, 90)
+        );
+    }
+
+    /**
      * Builds a sync with the shop-runtime collaborators (JTL gateway for
      * crypto/order numbers/tax/mail). For tests, construct manually with
      * fakes instead.
@@ -81,7 +102,8 @@ final class Sync
     {
         $connection = new JtlConnection($db);
         $settings = new Settings($connection, 0);
-        $client = new Client($settings->getClientId(), $settings->getClientSecret(), '', APPLICATION_VERSION, PluginInfo::VERSION);
+        // The sync keeps 10/30; only refunds (the automatic one) wait the 90 s.
+        $client = new Client($settings->getClientId(), $settings->getClientSecret(), '', APPLICATION_VERSION, PluginInfo::VERSION, null, new CurlTransport(10, 90));
         $links = new OrderLinks($connection);
 
         return new self(
@@ -180,6 +202,8 @@ final class Sync
                     $orderId = $result['orderId'];
                     $warnings = array_merge($warnings, $result['warnings']);
                     ++$imported;
+                    // Once, right after the import; never retried, never an error.
+                    $warnings = array_merge($warnings, ImportReport::send($this->client, $everysizeOrderId, $result['report']));
                 }
 
                 if (!$this->links->isNumberReported($orderId)) {

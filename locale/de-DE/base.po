@@ -3,8 +3,8 @@ msgid ""
 msgstr "Content-Type: text/plain; charset=UTF-8\n"
 
 #.
-msgid "Die Erstattung läuft über everysize (PayPal) — Gutschriften in JTL-Wawi bewegen kein Geld. Der Restbetrag ist vorbelegt. Ein Storno vor dem Versand ohne bisherige Erstattung wird automatisch voll erstattet (Einstellung „Automatische Erstattung“)."
-msgstr "Die Erstattung läuft über everysize (PayPal) — Gutschriften in JTL-Wawi bewegen kein Geld. Der Restbetrag ist vorbelegt. Ein Storno vor dem Versand ohne bisherige Erstattung wird automatisch voll erstattet (Einstellung „Automatische Erstattung“)."
+msgid "Die Erstattung läuft über everysize (PayPal) — Gutschriften in JTL-Wawi bewegen kein Geld. Der Restbetrag ist vorbelegt. Ein Storno vor dem Versand ohne bisherige Erstattung wird automatisch voll erstattet (Einstellung „Automatische Erstattung“) – nur wenn nachweislich nichts versendet wurde und die Bestellung bei everysize nicht schon widerrufen ist; sonst steht ein Hinweis im Protokoll."
+msgstr "Die Erstattung läuft über everysize (PayPal) — Gutschriften in JTL-Wawi bewegen kein Geld. Der Restbetrag ist vorbelegt. Ein Storno vor dem Versand ohne bisherige Erstattung wird automatisch voll erstattet (Einstellung „Automatische Erstattung“) – nur wenn nachweislich nichts versendet wurde und die Bestellung bei everysize nicht schon widerrufen ist; sonst steht ein Hinweis im Protokoll."
 
 #.
 msgid "Die Retoure ist für alle Positionen bereits gemeldet."
@@ -593,3 +593,125 @@ msgstr "offen"
 #.
 msgid "storniert"
 msgstr "storniert"
+
+
+#.
+msgid "Erstattung: Es sind nur noch %s offen. Bitte höchstens diesen Betrag erstatten."
+msgstr "Erstattung: Es sind nur noch %s offen. Bitte höchstens diesen Betrag erstatten."
+
+
+#.
+msgid "Erstattung abgelehnt, es ist kein Geld geflossen: "
+msgstr "Erstattung abgelehnt, es ist kein Geld geflossen: "
+
+#.
+msgid "Ergebnis unklar"
+msgstr "Ergebnis unklar"
+
+#.
+msgid "den Rest"
+msgstr "den Rest"
+
+#.
+msgid "Erstattung: Ein früherer Aufruf über %s hat kein klares Ergebnis. Solange er offen ist, wird nichts anderes erstattet. Bitte ihn zuerst prüfen (PayPal), wiederholen oder als geklärt markieren."
+msgstr "Erstattung: Ein früherer Aufruf über %s hat kein klares Ergebnis. Solange er offen ist, wird nichts anderes erstattet. Bitte ihn zuerst prüfen (PayPal), wiederholen oder als geklärt markieren."
+
+#.
+msgid "Erstattung: Ein früherer Aufruf über %s hat kein klares Ergebnis. Es wird nichts Weiteres gesendet. Bitte ihn zuerst prüfen (PayPal), wiederholen oder als geklärt markieren."
+msgstr "Erstattung: Ein früherer Aufruf über %s hat kein klares Ergebnis. Es wird nichts Weiteres gesendet. Bitte ihn zuerst prüfen (PayPal), wiederholen oder als geklärt markieren."
+
+#.
+msgid "Erstattung nicht gesendet: Die Erstattungen haben sich seit dem Laden der Seite geändert. Bitte neu laden."
+msgstr "Erstattung nicht gesendet: Die Erstattungen haben sich seit dem Laden der Seite geändert. Bitte neu laden."
+
+#.
+msgid "Erstattung nicht gesendet: Die Erstattungen bei everysize sind gerade nicht lesbar. Bitte später erneut versuchen."
+msgstr "Erstattung nicht gesendet: Die Erstattungen bei everysize sind gerade nicht lesbar. Bitte später erneut versuchen."
+
+#.
+msgid "Erstattung nicht gesendet: Für diese Bestellung läuft gerade ein anderer Erstattungsaufruf. Bitte später prüfen."
+msgstr "Erstattung nicht gesendet: Für diese Bestellung läuft gerade ein anderer Erstattungsaufruf. Bitte später prüfen."
+
+#.
+msgid "Der Erstattungsaufruf läuft möglicherweise noch. Bitte in %d Sekunden erneut prüfen."
+msgstr "Der Erstattungsaufruf läuft möglicherweise noch. Bitte in %d Sekunden erneut prüfen."
+
+#.
+msgid "Es gibt keinen offenen Erstattungsvorgang."
+msgstr "Es gibt keinen offenen Erstattungsvorgang."
+
+#.
+msgid "Der offene Vorgang ist unvollständig. Bitte in PayPal prüfen und als geklärt markieren."
+msgstr "Der offene Vorgang ist unvollständig. Bitte in PayPal prüfen und als geklärt markieren."
+
+#.
+msgid "Erstattung nicht gesendet: Die Anmeldung bei everysize ist gescheitert, es ist nichts passiert. "
+msgstr "Erstattung nicht gesendet: Die Anmeldung bei everysize ist gescheitert, es ist nichts passiert. "
+
+#.
+msgid "Erstattung über %s: Ergebnis unklar. Das Geld kann geflossen sein. Bitte in PayPal prüfen; erst danach wiederholen oder als geklärt markieren. (%s)"
+msgstr "Erstattung über %s: Ergebnis unklar. Das Geld kann geflossen sein. Bitte in PayPal prüfen; erst danach wiederholen oder als geklärt markieren. (%s)"
+
+#.
+msgid "Die Erstattung ist bei PayPal bereits gebucht (%s). Sie wurde übernommen, es wurde nichts gesendet."
+msgstr "Die Erstattung ist bei PayPal bereits gebucht (%s). Sie wurde übernommen, es wurde nichts gesendet."
+
+#.
+msgid "Der offene Vorgang wurde als geklärt markiert. Es wurde nichts gesendet; die automatische Erstattung bleibt für diese Bestellung aus."
+msgstr "Der offene Vorgang wurde als geklärt markiert. Es wurde nichts gesendet; die automatische Erstattung bleibt für diese Bestellung aus."
+
+#.
+msgid "Erstattung: Seite neu laden und erneut senden."
+msgstr "Erstattung: Seite neu laden und erneut senden."
+
+#.
+msgid "als geklärt markiert"
+msgstr "als geklärt markiert"
+
+#.
+msgid "abgelehnt"
+msgstr "abgelehnt"
+
+#.
+msgid "Ergebnis unbekannt"
+msgstr "Ergebnis unbekannt"
+
+#.
+msgid "Ergebnis unklar — das Geld kann geflossen sein."
+msgstr "Ergebnis unklar — das Geld kann geflossen sein."
+
+#.
+msgid "Ein Erstattungsaufruf über %s (Beginn %s, zuletzt gesendet %s) hat keine klare Antwort bekommen. Solange er offen ist, wird nichts anderes erstattet, auch nicht automatisch. Bitte zuerst in PayPal prüfen."
+msgstr "Ein Erstattungsaufruf über %s (Beginn %s, zuletzt gesendet %s) hat keine klare Antwort bekommen. Solange er offen ist, wird nichts anderes erstattet, auch nicht automatisch. Bitte zuerst in PayPal prüfen."
+
+#.
+msgid "Der Aufruf läuft möglicherweise noch — bitte in %d Sekunden erneut prüfen."
+msgstr "Der Aufruf läuft möglicherweise noch — bitte in %d Sekunden erneut prüfen."
+
+#.
+msgid "Wiederholen: Es wird zuerst die PayPal-Liste gelesen. Steht die Erstattung dort nicht, wird der Betrag jetzt gesendet. Ging die erste Anfrage nicht durch, wird er jetzt ausgezahlt. Fortfahren?"
+msgstr "Wiederholen: Es wird zuerst die PayPal-Liste gelesen. Steht die Erstattung dort nicht, wird der Betrag jetzt gesendet. Ging die erste Anfrage nicht durch, wird er jetzt ausgezahlt. Fortfahren?"
+
+#.
+msgid "Wiederholen"
+msgstr "Wiederholen"
+
+#.
+msgid "Als geklärt markieren: Es wird nichts gesendet. Der Vorgang wird beendet, die automatische Erstattung bleibt für diese Bestellung aus. Fortfahren?"
+msgstr "Als geklärt markieren: Es wird nichts gesendet. Der Vorgang wird beendet, die automatische Erstattung bleibt für diese Bestellung aus. Fortfahren?"
+
+#.
+msgid "Als geklärt markieren"
+msgstr "Als geklärt markieren"
+
+#.
+msgid "Die Wiederholung wurde vom Checkout abgelehnt, der Vorgang bleibt offen. Bitte in PayPal prüfen und ihn als geklärt markieren. "
+msgstr "Die Wiederholung wurde vom Checkout abgelehnt, der Vorgang bleibt offen. Bitte in PayPal prüfen und ihn als geklärt markieren. "
+
+#.
+msgid "Diese Erstattung ist bereits als gebucht gemeldet. Der Vorgang wurde abgeschlossen, es wurde nichts gesendet."
+msgstr "Diese Erstattung ist bereits als gebucht gemeldet. Der Vorgang wurde abgeschlossen, es wurde nichts gesendet."
+
+#.
+msgid "Dieser Versuch wurde abgelehnt, es floss kein Geld. Bitte im aktuellen Formular neu auslösen."
+msgstr "Dieser Versuch wurde abgelehnt, es floss kein Geld. Bitte im aktuellen Formular neu auslösen."
