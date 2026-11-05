@@ -715,3 +715,27 @@ msgstr "Diese Erstattung ist bereits als gebucht gemeldet. Der Vorgang wurde abg
 #.
 msgid "Dieser Versuch wurde abgelehnt, es floss kein Geld. Bitte im aktuellen Formular neu auslösen."
 msgstr "Dieser Versuch wurde abgelehnt, es floss kein Geld. Bitte im aktuellen Formular neu auslösen."
+
+#.
+msgid "Bestellung %s wurde bei everysize storniert. Bitte nicht versenden und im Shop stornieren."
+msgstr "Bestellung %s wurde bei everysize storniert. Bitte nicht versenden und im Shop stornieren."
+
+#.
+msgid "Bestellung %s wurde bei everysize storniert, ist hier aber schon als versendet markiert. Bitte prüfen."
+msgstr "Bestellung %s wurde bei everysize storniert, ist hier aber schon als versendet markiert. Bitte prüfen."
+
+#.
+msgid "Bei everysize storniert"
+msgstr "Bei everysize storniert"
+
+#.
+msgid "bei everysize storniert"
+msgstr "bei everysize storniert"
+
+#.
+msgid "Hinweis geschrieben"
+msgstr "Hinweis geschrieben"
+
+#.
+msgid "Warnung"
+msgstr "Warnung"

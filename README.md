@@ -5,7 +5,7 @@ Kundinnen auf everysize.com aufgeben, landen als Bestellung im Shop;
 Bestellnummer, Versand mit Sendungsnummern, Storno, Retoure und Erstattungen
 gehen zurück an everysize.
 
-Plugin-ID `everysize_checkout`, Version 1.1.0, MIT-Lizenz.
+Plugin-ID `everysize_checkout`, Version 1.2.0, MIT-Lizenz.
 
 ## Voraussetzungen
 
@@ -59,6 +59,7 @@ write-only.
 | everysize → Shop | neue Bestellungen (`PROCESSING`, auch bereits stornierte `REVOKED`) ohne Händler-Bestellnummer | jeder Lauf |
 | Shop → everysize | JTL-Bestellnummer | direkt nach dem Import |
 | Shop → everysize | Import-Meldung: aktueller Shop-Preis und Bestand je Position (Information, ab 1.1.0) | einmal direkt nach dem Import, nicht bei stornierten Bestellungen |
+| everysize → Shop | Hinweis, wenn eine importierte Bestellung bei everysize storniert wurde (ab 1.2.0, siehe „Storno durch everysize“) | nach Import und Export, jeder Lauf |
 | Shop → everysize | Versand mit Sendungsnummer und Versanddienstleister | Versand in der Wawi gebucht (Status/Lieferschein), ersatzweise Sendungsnummer von Hand im Bestell-Tab (gilt als Versand: Storno danach ist `RETOUR`, keine automatische Erstattung) |
 | Shop → everysize | Sendungsnummer nachgetragen oder korrigiert | in der Wawi oder von Hand im Bestell-Tab geändert → nächster Lauf |
 | Shop → everysize | Erstattung (ganz oder teilweise) | Button im Bestell-Tab |
@@ -215,6 +216,27 @@ Storno den Grund von everysize überschreiben; im Protokoll steht das als
 Erstattung nach Storno vor dem Versand ist abschaltbar und wird mit Grund
 im Protokoll vermerkt, wenn sie nicht möglich ist (z. B. Zahlung nicht
 über everysize gelaufen).
+
+## Storno durch everysize
+
+Wird eine bereits importierte Bestellung danach bei everysize storniert (z. B. von der Kundin
+widerrufen und erstattet), zeigt das Plugin einen **Hinweis nur für den Händler**: ein Kennzeichen
+„bei everysize storniert“ in der Liste und einen roten Hinweis über der Bestellung im Tab
+„Bestellungen“ sowie eine Warnung im Protokoll: „Bestellung <Nummer> wurde bei everysize
+storniert. Bitte nicht versenden und im Shop stornieren.“ Steht die Bestellung hier schon als
+versendet (Status, Versanddatum, Sendungsnummer, Lieferschein), lautet der Hinweis: „… ist hier aber
+schon als versendet markiert. Bitte prüfen.“ Ist sie im Shop schon storniert (oder über everysize
+vollständig erstattet; eine Teilerstattung, z. B. aus Kulanz, zählt nicht), gibt es keinen Hinweis; wird sie danach
+storniert oder vollständig erstattet, verschwindet der Hinweis wieder. Der Hinweis nennt nur die Bestellnummer, es geht keine E-Mail
+raus. **Das Plugin ändert dabei nichts:** keine Daten der Bestellung oder der Wawi, kein
+Statuswechsel, keine Bestandsbuchung, keine Erstattung, keine Meldung an everysize – das
+entscheidet der Händler. Die Abfrage läuft nach Import und Export, betrachtet Bestellungen der
+letzten 30 Tage (Anlegedatum), liest höchstens 500 Zeilen je Lauf (bei mehr die jüngsten); ein Fehler dabei (keine Antwort,
+401, 404, 5xx, ungültige Antwort) steht höchstens einmal je Tag und Fehlerart als Warnung im Protokoll (weitere gehen ins Shop-Log), Import und Export laufen
+unabhängig davon. Jede Bestellung bekommt den Hinweis genau einmal.
+**Grenzen:** Eine Erstattung, die der Händler direkt in PayPal macht, ohne Storno bei everysize,
+kennt das Plugin nicht. Stornos bei everysize für Bestellungen, die älter als 30 Tage sind, werden
+nicht mehr abgeglichen.
 
 ## Protokoll
 

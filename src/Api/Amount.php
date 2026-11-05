@@ -26,4 +26,10 @@ final class Amount
 
         throw new ApiException(sprintf('Invalid %s in everysize order: %s', $field, var_export($value, true)));
     }
+
+    /** The amount in whole cents, rounded once from the two decimals. */
+    public static function cents($value, string $field = 'amount'): int
+    {
+        return (int) round(self::parse($value, $field) * 100);
+    }
 }

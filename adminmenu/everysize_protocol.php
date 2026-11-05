@@ -71,7 +71,11 @@ $pages = (int) ceil(max(1, $total) / $perPage);
                 <?php foreach ($entries as $entry) : ?>
                     <tr>
                         <td><small><?= htmlspecialchars((string) $entry->created_at, ENT_QUOTES) ?></small></td>
-                        <td><?= (int) $entry->state === 1 ? '<span class="text-success">✔</span>' : '<span class="text-danger">✘</span>' ?></td>
+                        <td><?= match ((int) $entry->state) {
+                            1 => '<span class="text-success">✔</span>',
+                            Protocol::STATE_WARNING => '<span class="text-warning" title="' . htmlspecialchars($t('Warnung'), ENT_QUOTES) . '">⚠</span>',
+                            default => '<span class="text-danger">✘</span>',
+                        } ?></td>
                         <td><?= htmlspecialchars((string) $entry->title, ENT_QUOTES) ?></td>
                         <td><small style="white-space: pre-wrap"><?= htmlspecialchars((string) $entry->message, ENT_QUOTES) ?></small></td>
                     </tr>

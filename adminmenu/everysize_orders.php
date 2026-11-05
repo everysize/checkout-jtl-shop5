@@ -314,6 +314,9 @@ $orders = $db->getObjects(
 $displayedIds = array_map(static fn (object $order): int => (int) $order->kBestellung, $orders);
 $idsSql = $displayedIds === [] ? '0' : implode(',', $displayedIds);
 
+/** @var array<int, string> order id => OPEN|SHIPPED: only orders that are not closed (cancelled, refunded in full) by now */
+$revokedNotes = $links->getRevokedNotes($displayedIds);
+
 /** @var array<int, array<int, object>> order id => positions */
 $positionsByOrder = [];
 foreach ($db->getObjects(
@@ -426,6 +429,18 @@ $money = static fn (float $amount, string $currency): string => number_format($a
     . ' ' . (\in_array(strtoupper($currency), ['', 'EUR'], true) ? '€' : strtoupper($currency));
 
 /**
+ * Hinweis des Storno-Abgleichs (bei everysize storniert, hier noch nicht): Text in der Admin-Sprache, nur die
+ * Bestellnummer. Leer, wenn es keinen Hinweis gibt oder die Bestellung inzwischen storniert bzw. vollständig erstattet ist.
+ */
+$revokedText = static function (object $order) use ($t, $revokedNotes): string {
+    return match ($revokedNotes[(int) $order->kBestellung] ?? '') {
+        'OPEN' => sprintf($t('Bestellung %s wurde bei everysize storniert. Bitte nicht versenden und im Shop stornieren.'), (string) $order->cBestellNr),
+        'SHIPPED' => sprintf($t('Bestellung %s wurde bei everysize storniert, ist hier aber schon als versendet markiert. Bitte prüfen.'), (string) $order->cBestellNr),
+        default => '',
+    };
+};
+
+/**
  * Rückmeldungen als Tabellenzeilen mit übersetzten Werten — keine rohen
  * Codes (fulfillment/sent), nichts abgeschnitten, Leeres als „–“.
  *
@@ -444,8 +459,12 @@ $reportRow = static function (object $report, string $currency) use ($t, $money)
         OrderLinks::KIND_TRACKING => $t('Sendungsnummer'),
         OrderLinks::KIND_REVOCATION => $reason === Client::REASON_RETOUR ? $t('Retoure') : $t('Storno'),
         OrderLinks::KIND_REFUND, OrderLinks::KIND_REFUND_OPEN => $sku === OrderLinks::AUTO_REFUND ? $t('Automatische Erstattung') : $t('Erstattung'),
+        OrderLinks::KIND_REVOKED_AT_EVERYSIZE => $t('Bei everysize storniert'),
         default => $kind,
     };
+    if ($kind === OrderLinks::KIND_REVOKED_AT_EVERYSIZE) {
+        $reason = ''; // OPEN / SHIPPED is the kind of the hint, shown above the order
+    }
     // subject = Artikel/Sendungsnummer/Erstattung; detail = Grund/Betrag.
     if ($kind === OrderLinks::KIND_REFUND || $kind === OrderLinks::KIND_REFUND_OPEN) {
         if ($sku === OrderLinks::AUTO_REFUND && $result === OrderLinks::RESULT_SENT) {
@@ -471,6 +490,7 @@ $reportRow = static function (object $report, string $currency) use ($t, $money)
         };
     }
     $resultText = match ($result) {
+        OrderLinks::RESULT_NOTED => $t('Hinweis geschrieben'),
         OrderLinks::RESULT_SENT => $t('gemeldet'),
         OrderLinks::RESULT_SKIPPED => $t('übersprungen'),
         OrderLinks::RESULT_KNOWN => $t('bekannt'),
@@ -550,6 +570,9 @@ $e = static fn ($value): string => htmlspecialchars((string) $value, ENT_QUOTES)
                                 <strong><?= $e($order->cBestellNr) ?></strong>
                             </a>
                             <small class="text-muted d-block">#<?= $id ?></small>
+                            <?php if ($revokedText($order) !== '') : ?>
+                                <span class="badge badge-danger" title="<?= $e($revokedText($order)) ?>"><?= $e($t('bei everysize storniert')) ?></span>
+                            <?php endif; ?>
                         </td>
                         <td><code><?= $e($order->everysize_order_id) ?></code></td>
                         <td><?= $e($money((float) $order->fGesamtsumme, $currency)) ?></td>
@@ -578,6 +601,11 @@ $e = static fn ($value): string => htmlspecialchars((string) $value, ENT_QUOTES)
                                 $reports = $reportsByOrder[$id] ?? [];
                                 $manual = $trackingByOrder[$id] ?? null;
                                 ?>
+                                <?php if ($revokedText($order) !== '') : ?>
+                                    <div class="alert alert-danger py-2 mt-2" style="max-width: 48rem">
+                                        <strong><?= $e($revokedText($order)) ?></strong>
+                                    </div>
+                                <?php endif; ?>
                                 <!-- (1) everysize-Bestellung: eine Infotabelle -->
                                 <h6 class="mt-2 mb-2"><?= $t('everysize-Bestellung') ?></h6>
                                 <table class="table table-sm w-auto mb-3" style="min-width: 34rem">

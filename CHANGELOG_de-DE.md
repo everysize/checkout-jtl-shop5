@@ -1,5 +1,9 @@
 # Änderungsprotokoll
 
+## 1.2.0
+
+* Storno-Abgleich: Eine importierte Bestellung, die danach bei everysize storniert wird, bekommt einen Hinweis nur für den Händler – ein Kennzeichen in der Liste und einen roten Hinweis über der Bestellung im Tab „Bestellungen“ sowie eine Warnung im Protokoll: „Bestellung <Nummer> wurde bei everysize storniert. Bitte nicht versenden und im Shop stornieren.“ Steht die Bestellung hier schon als versendet (Status, Versanddatum, Sendungsnummer, Lieferschein), sagt der Hinweis das und bittet um Prüfung. Ist die Bestellung im Shop schon storniert (oder über everysize vollständig erstattet; eine Teilerstattung, z. B. aus Kulanz, zählt nicht), gibt es keinen Hinweis, und der Hinweis verschwindet, sobald die Bestellung danach storniert oder vollständig erstattet wird. Das Plugin ändert dabei nichts: keine Daten der Bestellung oder der Wawi, kein Status, keine Bestandsbuchung, keine Erstattung, keine E-Mail, keine Meldung an everysize. Es läuft nach Import und Export, betrachtet die letzten 30 Tage (höchstens 500 Zeilen je Lauf, bei mehr die jüngsten), jede Bestellung bekommt den Hinweis genau einmal, und ein Fehler dabei ist höchstens eine Warnung je Tag und Fehlerart im Protokoll (der Rest geht ins Shop-Log) – Import und Export bleiben unberührt. Das Protokoll kennt einen neuen Status „Warnung“
+
 ## 1.1.0
 
 * Import-Meldung: Vor dem Schreiben einer Bestellung liest das Plugin den

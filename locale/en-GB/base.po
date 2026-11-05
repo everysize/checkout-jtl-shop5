@@ -715,3 +715,27 @@ msgstr "This refund is already reported as booked. The refund was closed, nothin
 #.
 msgid "Dieser Versuch wurde abgelehnt, es floss kein Geld. Bitte im aktuellen Formular neu auslösen."
 msgstr "This attempt was refused, no money moved. Please trigger it again in the current form."
+
+#.
+msgid "Bestellung %s wurde bei everysize storniert. Bitte nicht versenden und im Shop stornieren."
+msgstr "Order %s was cancelled at everysize. Please do not ship it and cancel it in the shop."
+
+#.
+msgid "Bestellung %s wurde bei everysize storniert, ist hier aber schon als versendet markiert. Bitte prüfen."
+msgstr "Order %s was cancelled at everysize but is already marked as shipped here. Please check."
+
+#.
+msgid "Bei everysize storniert"
+msgstr "Cancelled at everysize"
+
+#.
+msgid "bei everysize storniert"
+msgstr "cancelled at everysize"
+
+#.
+msgid "Hinweis geschrieben"
+msgstr "hint written"
+
+#.
+msgid "Warnung"
+msgstr "warning"

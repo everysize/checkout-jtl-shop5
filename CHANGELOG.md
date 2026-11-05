@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.0
+
+* Cancellation check: an imported order that is cancelled at everysize afterwards gets a hint for the merchant only - a mark in the list and a red hint above the order in the tab "Orders", and a warning in the protocol: "Order <number> was cancelled at everysize. Please do not ship it and cancel it in the shop." If the order already shows as shipped (status, shipping date, tracking code, delivery note), the hint says so and asks to check. If the order is already cancelled in the shop (or refunded in full through everysize; a partial refund such as goodwill does not count), no hint, and the hint disappears as soon as the order is cancelled or refunded in full afterwards. The plugin changes nothing itself: no data of the order or the Wawi, no status, no stock, no refund, no e-mail, no report to everysize. It runs after import and export, looks at the last 30 days (up to 500 rows per run; with more, the youngest ones), each order is hinted exactly once, and an error there is at most one warning per day and kind of error in the protocol (the rest goes to the shop log) - import and export are not affected. The protocol has a new state "warning"
+
 ## 1.1.0
 
 * Import report: before an order is written the plugin reads the shop's

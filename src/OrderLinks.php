@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Plugin\everysize_checkout;
 
+use Plugin\everysize_checkout\Api\Amount;
+use Plugin\everysize_checkout\Api\ApiException;
 use Plugin\everysize_checkout\Db\Connection;
 
 /**
@@ -61,6 +63,14 @@ class OrderLinks
     public const KIND_FULFILLMENT_FAILED = 'fulfillfail';
     /** A refund entry is not touched by a second request within this many seconds (the first may still run). */
     public const REFUND_MIN_AGE = 150;
+    /**
+     * Marker of the cancellation check: the order is cancelled at everysize and the merchant was told (or needed no
+     * hint). Unique per order (empty sku). reason is the kind of hint (OPEN or SHIPPED) or empty. At most 16
+     * characters: the column kind.
+     */
+    public const KIND_REVOKED_AT_EVERYSIZE = 'es-revoked';
+    /** A hint for the merchant was written for the order (KIND_REVOKED_AT_EVERYSIZE). */
+    public const RESULT_NOTED = 'noted';
     /** Not sent: everysize already had it (a tracking code reported before the plugin remembered codes). */
     public const RESULT_KNOWN = 'known';
 
@@ -183,6 +193,147 @@ class OrderLinks
             'result' => $result,
             'created_at' => date('Y-m-d H:i:s'),
         ]);
+    }
+
+    public function hasReport(int $orderId, string $kind, string $sku): bool
+    {
+        return $this->db->getScalar(
+            'SELECT 1 FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind AND sku = :sku',
+            ['id' => $orderId, 'kind' => $kind, 'sku' => $sku]
+        ) !== null;
+    }
+
+    /**
+     * What the cancellation check needs to know about the shop order: number and language (de, else en), whether it is
+     * closed (status cancelled, a cancellation this plugin reported itself, which means it came from the shop, or the
+     * whole amount refunded through everysize: see isFullyRefunded; a partial refund does not close it) and whether
+     * shipping shows (status shipped, shipping date, tracking code, a delivery note, a shipping report of any
+     * result). $paidCents is what the customer paid (everysize grossPrice); without it the total of the shop order
+     * counts. null: no such order any more.
+     *
+     * @return array{number: string, iso: string, closed: bool, shipped: bool}|null
+     */
+    public function getRevokedCheckInfo(int $orderId, ?int $paidCents = null): ?array
+    {
+        $row = $this->db->getSingleObject(
+            "SELECT b.cBestellNr, b.cStatus, b.fGesamtsumme, s.cISO AS iso,
+                    (b.cStatus IN (:versandt, :teilversandt)
+                     OR b.dVersandDatum IS NOT NULL
+                     OR TRIM(COALESCE(b.cTracking, '')) <> ''
+                     OR EXISTS (SELECT 1 FROM xplugin_everysize_checkout_tracking t WHERE t.kBestellung = b.kBestellung AND TRIM(t.tracking_code) <> '')
+                     OR EXISTS (SELECT 1 FROM tlieferschein dl WHERE dl.kInetBestellung = b.kBestellung)
+                     OR EXISTS (SELECT 1 FROM xplugin_everysize_checkout_report sr
+                                WHERE sr.kBestellung = b.kBestellung AND sr.kind IN (:fulfillment, :tracking, :fulfillfail))) AS shipped,
+                    (SELECT COUNT(*) FROM xplugin_everysize_checkout_report r
+                     WHERE r.kBestellung = b.kBestellung
+                       AND r.kind = :revocation) AS closed_reports
+             FROM tbestellung b
+             LEFT JOIN tsprache s ON s.kSprache = b.kSprache
+             WHERE b.kBestellung = :id",
+            [
+                'id' => $orderId,
+                'versandt' => self::STATUS_VERSANDT,
+                'teilversandt' => self::STATUS_TEILVERSANDT,
+                'fulfillment' => self::KIND_FULFILLMENT,
+                'tracking' => self::KIND_TRACKING,
+                'fulfillfail' => self::KIND_FULFILLMENT_FAILED,
+                'revocation' => self::KIND_REVOCATION,
+            ]
+        );
+        if ($row === null) {
+            return null;
+        }
+
+        $closed = (string) $row->cStatus === self::STATUS_STORNO || (int) $row->closed_reports > 0;
+        if (!$closed) {
+            $paid = $paidCents !== null && $paidCents > 0 ? $paidCents : (int) round((float) $row->fGesamtsumme * 100);
+            $closed = $this->isFullyRefunded($orderId, $paid);
+        }
+
+        return [
+            'number' => (string) $row->cBestellNr,
+            'iso' => strtolower((string) ($row->iso ?? '')) === 'ger' ? 'de' : 'en',
+            'closed' => $closed,
+            'shipped' => (int) $row->shipped === 1,
+        ];
+    }
+
+    /**
+     * The refunds through everysize that were reported for the order (result sent) add up to the whole amount
+     * paid. The automatic refund after a cancellation is always the whole amount. Open or unclear refunds (open
+     * entry, cleared, known, rejected) count for nothing. Compared in cents.
+     */
+    public function isFullyRefunded(int $orderId, int $paidCents): bool
+    {
+        $rows = $this->db->getObjects(
+            'SELECT sku, reason FROM xplugin_everysize_checkout_report WHERE kBestellung = :id AND kind = :kind AND result = :sent',
+            ['id' => $orderId, 'kind' => self::KIND_REFUND, 'sent' => self::RESULT_SENT]
+        );
+
+        return self::coversPaid(array_map(static fn (object $r): array => ['sku' => (string) $r->sku, 'reason' => (string) $r->reason], $rows), $paidCents);
+    }
+
+    /**
+     * @param array<int, array{sku: string, reason: string}> $refundReports reports of kind refund with result sent
+     */
+    public static function coversPaid(array $refundReports, int $paidCents): bool
+    {
+        $sum = 0;
+        foreach ($refundReports as $report) {
+            if ($report['sku'] === self::AUTO_REFUND) {
+                return true;
+            }
+            try {
+                $sum += Amount::cents($report['reason']);
+            } catch (ApiException) {
+                // no readable amount: it counts for nothing
+            }
+        }
+
+        return $paidCents > 0 && $sum >= $paidCents;
+    }
+
+    /**
+     * Orders of the given list that carry the marker of the cancellation check with a hint (for the order page).
+     * Orders that are closed by now (cancelled, refunded in full) are left out: nothing is left to warn about.
+     *
+     * @param array<int, int> $orderIds
+     *
+     * @return array<int, string> order id => REASON (OPEN or SHIPPED)
+     */
+    public function getRevokedNotes(array $orderIds): array
+    {
+        $notes = [];
+        foreach ($this->getRevokedMarkers($orderIds) as $orderId => $reason) {
+            $info = $this->getRevokedCheckInfo($orderId);
+            if ($info !== null && !$info['closed']) {
+                $notes[$orderId] = $reason;
+            }
+        }
+
+        return $notes;
+    }
+
+    /**
+     * @param array<int, int> $orderIds
+     *
+     * @return array<int, string> order id => REASON of the markers that carry a hint
+     */
+    protected function getRevokedMarkers(array $orderIds): array
+    {
+        $ids = array_values(array_filter(array_map('intval', $orderIds), static fn (int $id): bool => $id > 0));
+        if ($ids === []) {
+            return [];
+        }
+        $markers = [];
+        foreach ($this->db->getObjects(
+            'SELECT kBestellung, reason FROM xplugin_everysize_checkout_report WHERE kind = :kind AND result = :noted AND kBestellung IN (' . implode(',', $ids) . ')',
+            ['kind' => self::KIND_REVOKED_AT_EVERYSIZE, 'noted' => self::RESULT_NOTED]
+        ) as $row) {
+            $markers[(int) $row->kBestellung] = (string) $row->reason;
+        }
+
+        return $markers;
     }
 
     /**

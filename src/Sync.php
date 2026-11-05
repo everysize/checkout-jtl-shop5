@@ -9,6 +9,7 @@ use Plugin\everysize_checkout\Api\ApiException;
 use Plugin\everysize_checkout\Api\Client;
 use Plugin\everysize_checkout\Api\CurlTransport;
 use Plugin\everysize_checkout\Db\JtlConnection;
+use Plugin\everysize_checkout\Export\RevokedNotice;
 use Plugin\everysize_checkout\Export\StatusExporter;
 use Plugin\everysize_checkout\Import\ImportException;
 use Plugin\everysize_checkout\Import\ImportReport;
@@ -36,13 +37,16 @@ final class Sync
 
     private Protocol $protocol;
 
+    private ?RevokedNotice $revokedNotice;
+
     public function __construct(
         Settings $settings,
         Client $client,
         OrderImporter $importer,
         StatusExporter $exporter,
         OrderLinks $links,
-        Protocol $protocol
+        Protocol $protocol,
+        ?RevokedNotice $revokedNotice = null
     ) {
         $this->settings = $settings;
         $this->client = $client;
@@ -50,6 +54,7 @@ final class Sync
         $this->exporter = $exporter;
         $this->links = $links;
         $this->protocol = $protocol;
+        $this->revokedNotice = $revokedNotice;
     }
 
     /**
@@ -112,7 +117,8 @@ final class Sync
             new OrderImporter($connection, $pluginId, $settings, $links, new JtlShopGateway()),
             new StatusExporter($client, $settings, $links),
             $links,
-            new Protocol($connection)
+            $protocol = new Protocol($connection),
+            new RevokedNotice($client, $links, $protocol, $settings)
         );
     }
 
@@ -162,6 +168,7 @@ final class Sync
                     $this->protocol->add('Report to everysize failed', $error, false);
                     $result['errors'][] = $error;
                 }
+                $this->checkRevoked();
             }
             $this->protocol->cleanup();
             $this->settings->set(Settings::LAST_SYNC, date('Y-m-d H:i:s'));
@@ -252,6 +259,28 @@ final class Sync
         }
 
         return ['messages' => [$title], 'errors' => $result['errors']];
+    }
+
+    /**
+     * Cancellation check (a hint for the merchant when an imported order was cancelled at everysize), after import
+     * and export. It must never disturb: it has no influence on the result of the run, an error is at most a warning
+     * in the protocol.
+     */
+    private function checkRevoked(): void
+    {
+        if ($this->revokedNotice === null) {
+            return;
+        }
+
+        try {
+            $this->revokedNotice->run();
+        } catch (\Throwable $e) {
+            try {
+                $this->protocol->warn('everysize: cancellation check failed', $e->getMessage());
+            } catch (\Throwable $ignored) {
+                // the protocol must never disturb
+            }
+        }
     }
 
     private function orderNumber(int $orderId): string

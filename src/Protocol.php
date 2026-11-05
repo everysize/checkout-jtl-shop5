@@ -15,18 +15,32 @@ class Protocol
 {
     public const RETENTION_DAYS = 31;
 
+    /** state of an entry: a hint or a warning, not an error (TINYINT(1) takes it without a migration). */
+    public const STATE_WARNING = 2;
+
     public function __construct(private Connection $db, private int $shopId = 0)
     {
     }
 
     public function add(string $title, string $message, bool $success): void
     {
+        $this->write($title, $message, $success ? 1 : 0);
+    }
+
+    /** A warning: shown as such, never counted as an error of the run. */
+    public function warn(string $title, string $message = ''): void
+    {
+        $this->write($title, $message, self::STATE_WARNING);
+    }
+
+    private function write(string $title, string $message, int $state): void
+    {
         $this->db->insert('xplugin_everysize_checkout_protocol', [
             'shop_id' => $this->shopId(),
             'created_at' => date('Y-m-d H:i:s'),
             'title' => mb_substr($title, 0, 255),
             'message' => $message,
-            'state' => $success ? 1 : 0,
+            'state' => $state,
         ]);
     }
 
